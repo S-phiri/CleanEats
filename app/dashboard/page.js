@@ -1,0 +1,77 @@
+import { createClient } from '../../lib/supabase-server'
+import { redirect } from 'next/navigation'
+import Nav from '../../Nav'
+import DashboardClient from '../../components/DashboardClient'
+
+export default async function Dashboard() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
+
+  const { data: plans } = await supabase
+    .from('plans')
+    .select('id, created_at, plan_title, plan_subtitle, target_calories')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  const { data: latestRow } = await supabase
+    .from('plans')
+    .select('id, plan_json, plan_title, plan_subtitle, target_calories, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const latestPlanJson = latestRow?.plan_json
+    ? (typeof latestRow.plan_json === 'string'
+      ? (() => { try { return JSON.parse(latestRow.plan_json) } catch { return null } })()
+      : latestRow.plan_json)
+    : null
+
+  const latestPlan = latestRow
+    ? {
+        ...latestRow,
+        plan_json: latestPlanJson
+          ? {
+              ...latestPlanJson,
+              targetCalories: latestPlanJson.targetCalories ?? latestRow.target_calories ?? null,
+            }
+          : null,
+      }
+    : null
+
+  const tier = profile?.tier || 'free'
+  const used = profile?.generations_this_month || 0
+  const limit = tier === 'free' ? 2 : '∞'
+  const hasProfile = !!(profile?.profile_data && profile.profile_data.goal)
+  const freeLimitReached = tier === 'free' && used >= 2
+  const displayName = profile?.name || user.email.split('@')[0]
+  const countryCode = profile?.profile_data?.countryCode
+  const location = countryCode === 'zm' ? 'Lusaka' : countryCode === 'ke' ? 'Nairobi' : countryCode === 'za' ? 'Johannesburg' : 'Your market'
+
+  return (
+    <>
+      <Nav user={user} tier={tier} />
+      <DashboardClient
+        user={{ id: user.id, email: user.email }}
+        displayName={displayName}
+        plans={plans || []}
+        tier={tier}
+        used={used}
+        limit={limit}
+        hasProfile={hasProfile}
+        freeLimitReached={freeLimitReached}
+        latestPlan={latestPlan}
+        location={location}
+        profileData={profile?.profile_data}
+      />
+    </>
+  )
+}

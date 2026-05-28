@@ -407,11 +407,15 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
       const supabase = createClient()
       const logRow = {
         user_id: user.id,
+        meal_type: loggedSlotMeal.type || logSelectedMeal,
         meal_name: loggedSlotMeal.name || selectedMealLabel,
-        deviation_note: note,
-        logged_at: new Date().toISOString(),
+        calories: loggedSlotMeal.calories ?? null,
+        protein_g: loggedSlotMeal.protein ?? null,
+        carbs_g: loggedSlotMeal.carbs ?? null,
+        fat_g: loggedSlotMeal.fat ?? null,
+        notes: note,
+        created_at: new Date().toISOString(),
       }
-      if (latestPlan?.id) logRow.meal_plan_id = latestPlan.id
 
       const { error: logErr } = await supabase.from('meal_logs').insert(logRow)
 

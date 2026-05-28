@@ -9,6 +9,7 @@ import { getCreditsExhaustedPayload } from '../../lib/generate-api-errors'
 import CreditsExhaustedAlert from '../../components/CreditsExhaustedAlert'
 import Glass from '../../components/primitives/Glass'
 import Button from '../../components/primitives/Button'
+import { authCallbackUrl } from '../../lib/auth-password'
 
 const GOALS = [
   { id: 'losefat', label: 'Lose Fat' },
@@ -162,7 +163,7 @@ export default function HbgEventPage() {
         email: email.trim(),
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/hbg`,
+          emailRedirectTo: authCallbackUrl('?next=/hbg') || `${window.location.origin}/auth/callback?next=/hbg`,
           data: { full_name: name.trim() },
         },
       })

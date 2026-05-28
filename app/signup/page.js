@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Mail } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMotionVariants, buttonTap, buttonHover, premiumHoverTransition } from '../../lib/motion'
+import { authCallbackUrl } from '../../lib/auth-password'
 
 const FIELD_ERROR_CLASS =
   'bg-[rgba(224,92,58,0.1)] border border-[rgba(224,92,58,0.3)] text-red rounded-xl px-3 py-2 text-sm mt-2'
@@ -59,9 +60,15 @@ export default function SignupPage() {
     }
     setFieldErrors({})
     setLoading(true)
+    const callbackUrl = authCallbackUrl()
+    if (!callbackUrl) {
+      setError('Site URL is not configured. Set NEXT_PUBLIC_SITE_URL in your environment.')
+      setLoading(false)
+      return
+    }
     const { error } = await supabase.auth.signUp({
       email, password,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
+      options: { emailRedirectTo: callbackUrl },
     })
     if (error) { setError(error.message); setLoading(false) }
     else setSuccess(true)
@@ -69,9 +76,15 @@ export default function SignupPage() {
 
   async function handleGoogle() {
     setLoading(true)
+    const callbackUrl = authCallbackUrl()
+    if (!callbackUrl) {
+      setError('Site URL is not configured. Set NEXT_PUBLIC_SITE_URL in your environment.')
+      setLoading(false)
+      return
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` }
+      options: { redirectTo: callbackUrl },
     })
     if (error) { setError(error.message); setLoading(false) }
   }

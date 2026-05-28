@@ -26,22 +26,8 @@ export default function Nav({ user, tier, variant = 'app' }) {
           </Link>
           <span className="hidden md:inline text-ink-mute text-[13px]">·</span>
           <span className="hidden md:inline text-ink-mute text-[13px] whitespace-nowrap">
-            A GRIND Ecosystem Product
+            Eat well · Train hard · Feel good
           </span>
-          <div className="hidden lg:flex items-center gap-2 ml-2">
-            {['Train', 'Compete', 'Eats'].map((pill) => (
-              <span
-                key={pill}
-                className={`font-mono text-[11px] uppercase tracking-[0.12em] px-3 py-1.5 rounded-full border ${
-                  pill === 'Eats'
-                    ? 'border-[var(--line-strong)] text-gold-soft'
-                    : 'border-[var(--line)] text-ink-mute'
-                }`}
-              >
-                {pill}
-              </span>
-            ))}
-          </div>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">

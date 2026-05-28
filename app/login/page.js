@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMotionVariants, buttonTap, buttonHover, premiumHoverTransition } from '../../lib/motion'
+import { authCallbackUrl } from '../../lib/auth-password'
 
 const DEBUG_AUTH = process.env.NODE_ENV !== 'production'
 
@@ -17,6 +18,14 @@ function LoginForm() {
   const redirectTo = searchParams.get('redirectTo') || '/dashboard'
   const supabase = createClient()
   const m = useMotionVariants()
+
+  useEffect(() => {
+    if (searchParams.get('error') === 'callback_failed') {
+      setError(
+        'Email confirmation failed or expired. Try signing in, or sign up again to get a new confirmation link.'
+      )
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (!DEBUG_AUTH) return
@@ -92,9 +101,15 @@ function LoginForm() {
 
   async function handleGoogle() {
     setLoading(true)
+    const callbackUrl = authCallbackUrl(`?next=${encodeURIComponent(redirectTo)}`)
+    if (!callbackUrl) {
+      setError('Site URL is not configured. Set NEXT_PUBLIC_SITE_URL in your environment.')
+      setLoading(false)
+      return
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}` }
+      options: { redirectTo: callbackUrl },
     })
     if (error) { setError(error.message); setLoading(false) }
   }

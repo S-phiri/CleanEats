@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Nav from '../../Nav'
 import DashboardClient from '../../components/DashboardClient'
 import { creditsRemainingForProfile } from '../../lib/credits'
+import { COUNTRIES } from '../../lib/utils'
 
 export default async function Dashboard() {
   const supabase = createClient()
@@ -52,8 +53,11 @@ export default async function Dashboard() {
   const hasProfile = !!(profile?.profile_data && profile.profile_data.goal)
   const initialCreditsRemaining = creditsRemainingForProfile(profile)
   const displayName = profile?.name || user.email.split('@')[0]
-  const countryCode = profile?.profile_data?.countryCode
-  const location = countryCode === 'zm' ? 'Lusaka' : countryCode === 'ke' ? 'Nairobi' : countryCode === 'za' ? 'Johannesburg' : 'Your market'
+  const profileData = profile?.profile_data || {}
+  const countryKey = (profileData.countryCode || 'ZM').toUpperCase()
+  const cd = COUNTRIES[countryKey] || COUNTRIES.other
+  const location =
+    (profileData.city && String(profileData.city).trim()) || cd?.name || ''
 
   return (
     <>
@@ -67,7 +71,7 @@ export default async function Dashboard() {
         initialCreditsRemaining={initialCreditsRemaining}
         latestPlan={latestPlan}
         location={location}
-        profileData={profile?.profile_data}
+        profileData={profileData}
       />
     </>
   )

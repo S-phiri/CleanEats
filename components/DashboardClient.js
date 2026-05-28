@@ -16,6 +16,7 @@ import { parseAssistantJson } from '../lib/parse-assistant-json'
 import { getCreditsExhaustedPayload } from '../lib/generate-api-errors'
 import CreditsExhaustedAlert from './CreditsExhaustedAlert'
 import { FREE_CREDIT_CAP, creditsRemainingForProfile } from '../lib/credits'
+import { sanitiseMealInput } from '../lib/sanitise'
 
 const MAIN_TABS = [
   { id: 'today', label: 'Today' },
@@ -147,9 +148,9 @@ function BuildPlanCTA() {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <p className="text-ink-mute text-sm mb-6 max-w-sm">
-        Tell us what to eat today — built from your local market and budget.
+        Set up your profile and we&apos;ll build a week of meals around your goal and budget.
       </p>
-      <Button href="/profile">Build Your First Plan</Button>
+      <Button href="/profile">Build your first plan</Button>
     </div>
   )
 }
@@ -162,7 +163,7 @@ export default function DashboardClient({
   hasProfile,
   initialCreditsRemaining = null,
   latestPlan,
-  location = 'Lusaka',
+  location = '',
   profileData,
 }) {
   const [mainTab, setMainTab] = useState('today')
@@ -233,7 +234,7 @@ export default function DashboardClient({
   const todayMeals = mealPlan[0]?.meals || []
   const hasPlan = !!planJson && mealPlan.length > 0
   const currency = profileData?.countryCode === 'ke' ? 'KES' : profileData?.countryCode === 'za' ? 'ZAR' : 'ZMW'
-  const dateMeta = `${formatDateEyebrow()} · ${location}`
+  const dateMeta = location ? `${formatDateEyebrow()} · ${location}` : formatDateEyebrow()
   const firstName = (displayName || 'Athlete').split(' ')[0]
   const creditsUsed =
     tier === 'free' && creditsRemaining !== null
@@ -407,13 +408,15 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
       const supabase = createClient()
       const logRow = {
         user_id: user.id,
-        meal_type: loggedSlotMeal.type || logSelectedMeal,
-        meal_name: loggedSlotMeal.name || selectedMealLabel,
-        calories: loggedSlotMeal.calories ?? null,
-        protein_g: loggedSlotMeal.protein ?? null,
-        carbs_g: loggedSlotMeal.carbs ?? null,
-        fat_g: loggedSlotMeal.fat ?? null,
-        notes: note,
+        ...sanitiseMealInput({
+          meal_type: loggedSlotMeal.type || logSelectedMeal,
+          meal_name: loggedSlotMeal.name || selectedMealLabel,
+          calories: loggedSlotMeal.calories ?? null,
+          protein_g: loggedSlotMeal.protein ?? null,
+          carbs_g: loggedSlotMeal.carbs ?? null,
+          fat_g: loggedSlotMeal.fat ?? null,
+          notes: note,
+        }),
         created_at: new Date().toISOString(),
       }
 
@@ -584,12 +587,11 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
           <header className="mb-8">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute mb-2">{dateMeta}</p>
             <h1 className="font-syne font-bold text-[clamp(36px,5vw,56px)] leading-[0.95] text-ink">
-              Fuel today, {firstName}.
+              Today, {firstName}.
             </h1>
           </header>
           {hasPlan ? (
             <div className="space-y-5">
-              <PerformanceMetrics planData={planMetrics} meta={planMeta} empty={!planMetrics} />
               {liveTodayMeals.length > 0 ? (
                 <>
                   <DashboardToday meals={liveTodayMeals} />
@@ -599,12 +601,18 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
                     </p>
                   )}
                   <Button type="button" className="w-full sm:w-auto" onClick={openLogModal}>
-                    Log What I Ate
+                    Log what I ate
                   </Button>
                 </>
               ) : (
                 <p className="text-ink-mute text-sm">No meals scheduled for today in this plan.</p>
               )}
+              <PerformanceMetrics
+                planData={planMetrics}
+                meta={planMeta}
+                empty={!planMetrics}
+                locationLabel={location || undefined}
+              />
             </div>
           ) : (
             <BuildPlanCTA />
@@ -633,27 +641,15 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
       {mainTab === 'performance' && (
         <div className="space-y-5">
           <header className="mb-2">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute mb-2">Performance</p>
-            <h1 className="font-syne font-bold text-2xl text-ink">Metrics &amp; adherence</h1>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute mb-2">Overview</p>
+            <h1 className="font-syne font-bold text-2xl text-ink">Your plan at a glance</h1>
           </header>
-
-          <PerformanceMetrics planData={planMetrics} meta={planMeta} empty={!planMetrics} />
 
           <MarketPriceIndex
             shoppingList={planJson?.shoppingList}
             currency={currency}
-            location={`${location} basket`}
+            location={location || undefined}
           />
-
-          <Glass goldEdge>
-            <CardBand title="Monthly adherence" meta={tier} />
-            <div className="px-5 py-6">
-              <p className="font-syne font-bold text-4xl tabular-nums text-gold-soft">92%</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-mute mt-2">
-                12 / 13 meals on-plan this month
-              </p>
-            </div>
-          </Glass>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Glass goldEdge>
@@ -710,6 +706,13 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
               </div>
             </Glass>
           </div>
+
+          <PerformanceMetrics
+            planData={planMetrics}
+            meta={planMeta}
+            empty={!planMetrics}
+            locationLabel={location || undefined}
+          />
         </div>
       )}
     </main>

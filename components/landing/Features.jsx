@@ -3,21 +3,21 @@ import Glass from '../primitives/Glass'
 
 const FEATURES = [
   {
-    n: '01 · PLAN',
-    title: 'Localized meal intelligence',
-    body: 'Plans built from real basket prices and culturally grounded staples — nshima, ugali, injera, pap. No imported substitutes.',
+    n: '01 · Plan',
+    title: 'Meals that fit your life',
+    body: 'Breakfast through dinner with calories, protein, carbs, and fat — using foods you can actually find at local shops.',
     Icon: ClipboardList,
   },
   {
-    n: '02 · TRAIN',
-    title: 'Synced to your session load',
-    body: 'Macros recalibrate against your training block. Refuel windows, glycogen loads, recovery meals on one timeline.',
+    n: '02 · Train',
+    title: 'Built around your week',
+    body: 'Your targets follow your goal and how often you train. Each day lines up with what you need that day.',
     Icon: Dumbbell,
   },
   {
-    n: '03 · COST',
-    title: 'Built for the budget',
-    body: 'Daily plan cost tracked in ZMW, KES, ZAR. Swap any ingredient and the basket recomputes — performance and price in one view.',
+    n: '03 · Budget',
+    title: 'Costs you can see',
+    body: 'Shopping lists with estimated prices in your currency. Swap meals and see how the week adds up.',
     Icon: Wallet,
   },
 ]

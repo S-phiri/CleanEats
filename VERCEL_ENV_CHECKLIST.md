@@ -2,11 +2,14 @@
 
 Set these in **Vercel → Project → Settings → Environment Variables** before deploying. Use **Production** (and **Preview** if preview deployments should work).
 
-After adding vars, redeploy. In **Supabase → Authentication → URL configuration**, set **Site URL** and **Redirect URLs** to your Vercel hostname, including:
+After adding vars, redeploy. In **Supabase → Authentication → URL configuration**:
 
-- `https://your-app.vercel.app/auth/callback`
-- `https://your-app.vercel.app/reset-password`
-- `http://localhost:3000/reset-password` (local dev)
+- **Site URL:** `https://cleaneats.fit` (production)
+- **Redirect URLs** (add each):
+  - `https://cleaneats.fit/auth/callback`
+  - `https://cleaneats.fit/reset-password`
+  - `http://localhost:3000/auth/callback` (local dev)
+  - `http://localhost:3000/reset-password` (local dev)
 
 Run locally: copy `.env.example` → `.env.local`, fill values, then `npm run dev`.
 
@@ -34,7 +37,7 @@ Required for meal plan generation (`/api/generate`). Omit only if using mock mod
 
 ## App Config
 
-- [ ] `NEXT_PUBLIC_SITE_URL` — public app origin (e.g. `https://your-app.vercel.app`). Used for password reset `redirectTo`; add `http://localhost:3000` for local dev
+- [ ] `NEXT_PUBLIC_SITE_URL` — public app origin. **Production:** `https://cleaneats.fit`. **Local `.env.local`:** `http://localhost:3000`. Used for signup `emailRedirectTo`, OAuth, and password reset.
 
 Optional — development, testing, or local runs without calling Anthropic.
 

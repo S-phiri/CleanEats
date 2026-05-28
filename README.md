@@ -57,8 +57,8 @@ npm install
 
 Supabase → **Authentication** → **URL configuration**:
 
-- **Site URL:** `http://localhost:3000`
-- **Redirect URLs:** include `http://localhost:3000/auth/callback`
+- **Site URL:** `http://localhost:3000` (local) or `https://cleaneats.fit` (production)
+- **Redirect URLs:** include `http://localhost:3000/auth/callback` and `https://cleaneats.fit/auth/callback`
 
 **Why:** Email confirmation and OAuth return the browser to your app; wrong URLs cause “redirect mismatch” errors.
 

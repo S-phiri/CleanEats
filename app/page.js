@@ -2,9 +2,11 @@ import { createClient } from '../lib/supabase/server'
 import Nav from '../Nav'
 import Footer from '../components/layout/Footer'
 import Hero from '../components/landing/Hero'
-import Features from '../components/landing/Features'
-import Persona from '../components/landing/Persona'
 import SignUpSection from '../components/landing/SignUpSection'
+import Features from '../components/landing/Features'
+import TdeeCalculator from '../components/landing/TdeeCalculator'
+import MetricsEducation from '../components/landing/MetricsEducation'
+import PerformanceMetrics from '../components/dashboard/PerformanceMetrics'
 
 export default async function Home() {
   const supabase = createClient()
@@ -22,6 +24,9 @@ export default async function Home() {
     latestPlan = data?.plan_json || null
   }
 
+  const planJson = latestPlan?.plan_json || latestPlan
+  const hasPlan = !!planJson
+
   return (
     <div className="page-layer min-h-screen">
       <Nav user={user} variant="landing" />
@@ -29,12 +34,20 @@ export default async function Home() {
         <Hero
           ctaHref={user ? '/dashboard' : '/signup'}
           ctaLabel={user ? 'Go to dashboard' : 'Start your plan'}
-          latestPlan={latestPlan}
         />
         <div className="max-w-[1280px] mx-auto px-6 sm:px-10">
+          <SignUpSection user={user} />
           <Features />
-          <Persona />
-          <SignUpSection />
+          {hasPlan && (
+            <section className="mb-24 max-w-[420px]">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute mb-4">
+                Your targets
+              </p>
+              <PerformanceMetrics planData={planJson} meta="From your latest plan" />
+            </section>
+          )}
+          <TdeeCalculator />
+          <MetricsEducation />
         </div>
       </main>
       <Footer />

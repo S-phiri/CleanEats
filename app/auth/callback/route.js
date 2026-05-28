@@ -1,20 +1,19 @@
-import { createClient } from '../../../lib/supabase/server'
+import { createRouteHandlerClient } from '../../../lib/supabase/server'
 import { NextResponse } from 'next/server'
 
 export async function GET(request) {
-  const { origin } = new URL(request.url)
+  const requestUrl = new URL(request.url)
+  const origin = requestUrl.origin
 
   try {
-    const { searchParams } = new URL(request.url)
-    const code = searchParams.get('code')
+    const code = requestUrl.searchParams.get('code')
 
     if (!code) {
       return NextResponse.redirect(`${origin}/login?error=callback_failed`)
     }
 
-    const supabase = createClient()
+    const { supabase, redirect } = createRouteHandlerClient(request)
 
-    // Supabase email confirmation / OAuth callback: code -> session cookies.
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
     if (exchangeError) {
       console.error('Callback error:', exchangeError)
@@ -27,8 +26,6 @@ export async function GET(request) {
       return NextResponse.redirect(`${origin}/login?error=callback_failed`)
     }
 
-    // New users should always complete onboarding first.
-    // Consider the profile "complete" once a key onboarding field exists.
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('name, profile_data')
@@ -37,8 +34,7 @@ export async function GET(request) {
 
     if (profileError) {
       console.error('Callback error:', profileError)
-      // If profile lookup fails for any reason, route user into onboarding (safe default).
-      return NextResponse.redirect(`${origin}/profile`)
+      return redirect(`${origin}/profile`)
     }
 
     const goal =
@@ -47,7 +43,8 @@ export async function GET(request) {
         : null
 
     const isProfileComplete = !!goal || !!profile?.name
-    return NextResponse.redirect(`${origin}${isProfileComplete ? '/dashboard' : '/profile'}`)
+    const destination = `${origin}${isProfileComplete ? '/dashboard' : '/profile'}`
+    return redirect(destination)
   } catch (error) {
     console.error('Callback error:', error)
     return NextResponse.redirect(`${origin}/login?error=callback_failed`)

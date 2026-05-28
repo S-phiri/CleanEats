@@ -1,6 +1,6 @@
 'use client'
 import { useState, Suspense, useEffect } from 'react'
-import { createClient } from '../../lib/supabase-browser'
+import { createClient } from '../../lib/supabase/client'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -182,6 +182,11 @@ function LoginForm() {
                 placeholder="••••••••"
                 className="ce-input"
               />
+              <p className="mt-2 text-right">
+                <Link href="/forgot-password" className="text-green text-xs hover:underline">
+                  Forgot password?
+                </Link>
+              </p>
             </div>
             <motion.button
               type="submit"

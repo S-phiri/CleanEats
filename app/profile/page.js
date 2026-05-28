@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { createClient } from '../../lib/supabase-browser'
+import { createClient } from '../../lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Nav from '../../Nav'
 import PremiumSelect from '../../components/PremiumSelect'
@@ -20,6 +20,7 @@ import {
   STEPS,
   GOALS,
   ACTIVITIES,
+  LIFESTYLE_TYPE_OPTIONS,
   DIETS,
   FASTINGS,
   ALLERGIES,
@@ -40,6 +41,8 @@ import {
 } from '../../lib/profile-options'
 import { buildMealPrepPromptBlock, buildPrepGuideInstructions } from '../../lib/meal-prep-prompt'
 import { parseAssistantJson } from '../../lib/parse-assistant-json'
+import { getCreditsExhaustedPayload } from '../../lib/generate-api-errors'
+import CreditsExhaustedAlert from '../../components/CreditsExhaustedAlert'
 
 function parseCsv(str) {
   return (str || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -68,6 +71,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState(null)
   const [step, setStep] = useState(1)
   const [error, setError] = useState('')
+  const [creditsExhausted, setCreditsExhausted] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
   const [generating, setGenerating] = useState(false)
   const { isDark } = useTheme()
@@ -76,7 +80,7 @@ export default function ProfilePage() {
     name: '', age: '', sex: '', units: 'metric',
     weightKg: '', heightCm: '', weightLbs: '', heightFt: '', heightIn: '',
     countryCode: 'ZM', job: '', commute: 'none', dailySteps: 6000, people: '1',
-    goal: '', activity: '',
+    goal: '', activity: '', lifestyleType: '',
     diet: [], fasting: '', allergies: [],
     culinaryStyle: 'mixed', cuisines: [],
     lovedMeals: '', excludeIngredients: '',
@@ -231,6 +235,7 @@ export default function ProfilePage() {
     const mealErrors = {}
     if (!form.goal) mealErrors.goal = 'Please select a health goal.'
     if (!form.activity) mealErrors.activity = 'Please select your activity level.'
+    if (!form.lifestyleType) mealErrors.lifestyleType = 'Please select how you usually eat.'
     if (!form.meals) mealErrors.meals = 'Please select your meals per day preference.'
     if (Object.keys(mealErrors).length > 0) {
       setFieldErrors(mealErrors)
@@ -238,6 +243,7 @@ export default function ProfilePage() {
     }
 
     setError('')
+    setCreditsExhausted(false)
     setFieldErrors({})
     setGenerating(true)
 
@@ -260,6 +266,8 @@ export default function ProfilePage() {
     const wellnessBlock = buildWellnessPromptSection(form.wellnessPillars)
     const mealPrepBlock = buildMealPrepPromptBlock(form)
     const mealPrepLabel = (MEAL_PREP_OPTIONS.find(o => o.value === (form.mealPrepPreference || '3day')) || MEAL_PREP_OPTIONS[2]).label
+    const lifestyleLabel =
+      LIFESTYLE_TYPE_OPTIONS.find((o) => o.value === form.lifestyleType)?.label || form.lifestyleType || 'not specified'
     const wellnessJson = `,"planSummary":"string","wellnessSupport":{"intro":"string","foodIdeas":[{"focus":"string","label":"string","items":["string"]}],"supplements":[{"name":"string","note":"string","caution":"string"}],"hydratingDrinks":[{"name":"string","note":"string"}]}`
 
     const jsonOnlyPrefix = `CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. No code fences. No text before or after the JSON. Begin your response with { and end with }. Any text outside the JSON object will break the application.
@@ -286,6 +294,7 @@ PROFILE:
 - TDEE: ${tdee ? tdee + ' kcal/day' : 'estimate from activity'}
 - Country: ${cd.name} | Currency: ${cd.currency}
 - Goal: ${form.goal}, Activity: ${form.activity}
+- Lifestyle: ${lifestyleLabel}
 - Diet: ${form.diet.join(', ')||'None'}, Fasting: ${form.fasting||'None'}
 - Allergies: ${form.allergies.join(', ')||'None'}
 - Culinary style: ${culinaryStyle}
@@ -303,6 +312,7 @@ ${buildStaplesRetailBlock(culinaryStyle, cd)}
 ${buildVarietyCuisineBlock(form.cuisines)}
 ${mealPrepBlock}
 ${wellnessBlock}
+LIFESTYLE: Tailor every meal to "${lifestyleLabel}" — practical formats, where food is prepared or bought, and timing (e.g. packable lunch, minimal home cooking, helper-friendly recipes, evening-only eating if fasting by day).
 Each meal: maximum 4 portions. Each portion: ingredient name, grams, and measure only. Remove visual cue field entirely.
 NEVER say "a serving", "some", "a portion", "a lump". Always exact numbers.
 ${maizeLine ? maizeLine + '\n' : ''}CALORIE TARGETS: fat loss = TDEE-400, lean bulk = TDEE+250, muscle = TDEE+400, recomp = TDEE.
@@ -343,8 +353,14 @@ Return ONLY valid JSON:
         body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], max_tokens: 8000 }),
       })
       const d1 = await r1.json()
-      if (d1.error === 'LIMIT_REACHED') { setError('Free tier limit reached. Upgrade to Pro for unlimited plans.'); setGenerating(false); return }
-      if (d1.error) throw new Error(d1.error)
+      const exhausted1 = getCreditsExhaustedPayload(r1, d1)
+      if (exhausted1) {
+        setCreditsExhausted(true)
+        setError(exhausted1.message)
+        setGenerating(false)
+        return
+      }
+      if (d1.error) throw new Error(d1.message || d1.error)
       const plan = parseAssistantJson(d1)
       console.log('RESPONSE TOKENS ESTIMATE:', Math.round(JSON.stringify(plan).length / 4))
 
@@ -363,7 +379,14 @@ Return ONLY valid JSON:
         body: JSON.stringify({ messages: [{ role: 'user', content: p2 }], max_tokens: 3000 }),
       })
       const d2 = await r2.json()
-      if (d2.error) throw new Error(d2.error)
+      const exhausted2 = getCreditsExhaustedPayload(r2, d2)
+      if (exhausted2) {
+        setCreditsExhausted(true)
+        setError(exhausted2.message)
+        setGenerating(false)
+        return
+      }
+      if (d2.error) throw new Error(d2.message || d2.error)
       const extra = parseAssistantJson(d2)
 
       const fullPlan = { ...plan, ...extra, profile: profileData }
@@ -386,12 +409,24 @@ Return ONLY valid JSON:
         setGenerating(false)
         return
       }
-      if (finData.error) throw new Error(finData.error)
+      const exhaustedFin = getCreditsExhaustedPayload(fin, finData)
+      if (exhaustedFin) {
+        setCreditsExhausted(true)
+        setError(exhaustedFin.message)
+        setGenerating(false)
+        return
+      }
+      if (finData.error) throw new Error(finData.message || finData.error)
 
       router.push(`/plan/${finData.planId}`)
     } catch (e) {
       console.error(e)
-      setError('Something went wrong: ' + e.message)
+      if (e?.message?.includes('CREDITS_EXHAUSTED')) {
+        setCreditsExhausted(true)
+        setError(e.message)
+      } else {
+        setError('Something went wrong: ' + e.message)
+      }
       setGenerating(false)
     }
   }
@@ -423,7 +458,9 @@ Return ONLY valid JSON:
         </div>
 
         {error && (
-          <div className="bg-[rgba(224,92,58,0.1)] border border-[rgba(224,92,58,0.3)] text-[#E05C3A] rounded-xl px-4 py-3 text-sm mb-5">{error}</div>
+          <div className="bg-[rgba(224,92,58,0.1)] border border-[rgba(224,92,58,0.3)] text-[#E05C3A] rounded-xl px-4 py-3 text-sm mb-5">
+            {creditsExhausted ? <CreditsExhaustedAlert message={error} /> : error}
+          </div>
         )}
 
         {/* Step 1 */}
@@ -530,6 +567,18 @@ Return ONLY valid JSON:
                 ))}
               </div>
               {fieldErrors.activity && <p className="text-[#E05C3A] text-xs mt-2">{fieldErrors.activity}</p>}
+            </Section>
+            <Section T={T} label="How do you usually eat?">
+              <PremiumSelect
+                T={T}
+                options={[{ value: '', label: 'Select\u2026' }, ...LIFESTYLE_TYPE_OPTIONS]}
+                value={form.lifestyleType}
+                onChange={(v) => set('lifestyleType', v)}
+              />
+              <p className={`text-xs ${T.muted} mt-3 leading-relaxed`}>
+                Your plan will match where and how you actually get meals — home cooking, eating out, meal prep, and more.
+              </p>
+              {fieldErrors.lifestyleType && <p className="text-[#E05C3A] text-xs mt-2">{fieldErrors.lifestyleType}</p>}
             </Section>
           </div>
         )}

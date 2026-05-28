@@ -11,8 +11,11 @@ import PerformanceMetrics from './dashboard/PerformanceMetrics'
 import MarketPriceIndex from './dashboard/MarketPriceIndex'
 import DashboardToday from './dashboard/DashboardToday'
 import PlanViewClient from './PlanViewClient'
-import { createClient } from '../lib/supabase-browser'
+import { createClient } from '../lib/supabase/client'
 import { parseAssistantJson } from '../lib/parse-assistant-json'
+import { getCreditsExhaustedPayload } from '../lib/generate-api-errors'
+import CreditsExhaustedAlert from './CreditsExhaustedAlert'
+import { FREE_CREDIT_CAP, creditsRemainingForProfile } from '../lib/credits'
 
 const MAIN_TABS = [
   { id: 'today', label: 'Today' },
@@ -21,7 +24,6 @@ const MAIN_TABS = [
 ]
 
 const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack']
-const FREE_CREDIT_CAP = 10
 
 const LOG_MEAL_PILLS = [
   { id: 'breakfast', label: 'Breakfast' },
@@ -34,27 +36,6 @@ const TRAINING_THEMES = ['BUILD - VOLUME', 'THRESHOLD', 'RECOVERY', 'DELOAD', 'P
 
 const TIER_BADGE_CLASS =
   'hidden sm:inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] px-3 py-1.5 rounded-full border border-[var(--line)]'
-
-function startOfCurrentMonthUtc() {
-  const now = new Date()
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-}
-
-function parseResetDate(value) {
-  if (!value) return null
-  const d = new Date(`${value}T00:00:00.000Z`)
-  return Number.isNaN(d.getTime()) ? null : d
-}
-
-function creditsRemainingFromProfile(profile) {
-  const profileTier = profile?.tier || 'free'
-  if (profileTier === 'pro' || profileTier === 'coach') return null
-  const monthStart = startOfCurrentMonthUtc()
-  const lastReset = parseResetDate(profile?.last_reset_date)
-  const creditsUsed =
-    !lastReset || lastReset < monthStart ? 0 : profile?.credits_used ?? 0
-  return Math.max(0, FREE_CREDIT_CAP - creditsUsed)
-}
 
 function findNavTierBadgeEl() {
   const navActions = document.querySelector('header nav > div:last-child')
@@ -178,10 +159,8 @@ export default function DashboardClient({
   displayName,
   plans,
   tier,
-  used,
-  limit,
   hasProfile,
-  freeLimitReached,
+  initialCreditsRemaining = null,
   latestPlan,
   location = 'Lusaka',
   profileData,
@@ -194,10 +173,11 @@ export default function DashboardClient({
   const [logDescription, setLogDescription] = useState('')
   const [logLoading, setLogLoading] = useState(false)
   const [logError, setLogError] = useState(null)
+  const [logCreditsExhausted, setLogCreditsExhausted] = useState(false)
   const [toast, setToast] = useState(null)
   const [coachNote, setCoachNote] = useState(null)
   const [navTierHost, setNavTierHost] = useState(null)
-  const [creditsRemaining, setCreditsRemaining] = useState(null)
+  const [creditsRemaining, setCreditsRemaining] = useState(initialCreditsRemaining)
 
   const refreshCredits = useCallback(async () => {
     try {
@@ -225,7 +205,7 @@ export default function DashboardClient({
       .eq('id', user.id)
       .single()
 
-    setCreditsRemaining(creditsRemainingFromProfile(profile))
+    setCreditsRemaining(creditsRemainingForProfile(profile))
   }, [user?.id])
 
   const planJson = useMemo(() => {
@@ -255,7 +235,13 @@ export default function DashboardClient({
   const currency = profileData?.countryCode === 'ke' ? 'KES' : profileData?.countryCode === 'za' ? 'ZAR' : 'ZMW'
   const dateMeta = `${formatDateEyebrow()} · ${location}`
   const firstName = (displayName || 'Athlete').split(' ')[0]
-  const usagePct = tier === 'free' ? Math.min((used / limit) * 100, 100) : 100
+  const creditsUsed =
+    tier === 'free' && creditsRemaining !== null
+      ? FREE_CREDIT_CAP - creditsRemaining
+      : 0
+  const creditsUsagePct =
+    tier === 'free' ? Math.min((creditsUsed / FREE_CREDIT_CAP) * 100, 100) : 100
+  const creditsExhausted = tier === 'free' && creditsRemaining === 0
   const planMeta = latestPlan
     ? `Day · ${new Date(latestPlan.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
     : 'No plan'
@@ -289,6 +275,7 @@ export default function DashboardClient({
     setLogSelectedMeal(null)
     setLogDescription('')
     setLogError(null)
+    setLogCreditsExhausted(false)
   }
 
   function openLogModal() {
@@ -296,6 +283,7 @@ export default function DashboardClient({
     setLogSelectedMeal(null)
     setLogDescription('')
     setLogError(null)
+    setLogCreditsExhausted(false)
     setLogModalOpen(true)
   }
 
@@ -376,8 +364,10 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
       })
       const d = await r.json()
 
-      if (d.error === 'CREDITS_EXHAUSTED' || r.status === 402) {
-        setLogError(d.message || 'You have used all your free credits this month. Upgrade to Pro for unlimited generations.')
+      const exhausted = getCreditsExhaustedPayload(r, d)
+      if (exhausted) {
+        setLogCreditsExhausted(true)
+        setLogError(exhausted.message)
         return
       }
       if (r.status === 429 && d.error === 'GENERATION_IN_PROGRESS') {
@@ -415,13 +405,15 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
       }
 
       const supabase = createClient()
-      const { error: logErr } = await supabase.from('meal_logs').insert({
+      const logRow = {
         user_id: user.id,
-        date: todayIsoDate(),
-        selected_meal: logSelectedMeal,
-        description,
-        coach_note: note,
-      })
+        meal_name: loggedSlotMeal.name || selectedMealLabel,
+        deviation_note: note,
+        logged_at: new Date().toISOString(),
+      }
+      if (latestPlan?.id) logRow.meal_plan_id = latestPlan.id
+
+      const { error: logErr } = await supabase.from('meal_logs').insert(logRow)
 
       if (logErr) {
         console.error('meal_logs insert:', logErr)
@@ -492,7 +484,11 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
                     )
                   })}
                 </div>
-                {logError && <p className="text-sm text-amber mt-3">{logError}</p>}
+                {logError && (
+                  <p className="text-sm text-amber mt-3">
+                    {logCreditsExhausted ? <CreditsExhaustedAlert message={logError} /> : logError}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-3 mt-6 justify-end">
                   <Button type="button" variant="ghost" disabled={logLoading} onClick={closeLogModal}>
                     Cancel
@@ -502,6 +498,7 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
                     disabled={logLoading || !logSelectedMeal}
                     onClick={() => {
                       setLogError(null)
+                      setLogCreditsExhausted(false)
                       setLogModalStep(2)
                     }}
                     className="btn btn-primary !min-h-[44px] disabled:opacity-50"
@@ -531,7 +528,11 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
                   placeholder="e.g. chicken burrito and pancakes at Wise Apple"
                   disabled={logLoading}
                 />
-                {logError && <p className="text-sm text-amber mt-3">{logError}</p>}
+                {logError && (
+                  <p className="text-sm text-amber mt-3">
+                    {logCreditsExhausted ? <CreditsExhaustedAlert message={logError} /> : logError}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-3 mt-5 justify-end">
                   <Button
                     type="button"
@@ -540,6 +541,7 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
                     onClick={() => {
                       setLogModalStep(1)
                       setLogError(null)
+                      setLogCreditsExhausted(false)
                     }}
                   >
                     Cancel
@@ -651,43 +653,55 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Glass goldEdge>
-              <CardBand title="Generations" meta={tier === 'free' ? 'this month' : 'unlimited'} />
+              <CardBand title="Credits" meta={tier === 'free' ? 'this month' : 'unlimited'} />
               <div className="px-5 py-6 text-center">
-                <p className="font-syne font-bold text-3xl tabular-nums text-ink">
-                  {tier === 'free' ? (
-                    <>
-                      <CountUpInteger value={used} duration={0.9} /> / {limit}
-                    </>
-                  ) : (
-                    <CountUpInteger value={used} duration={0.9} />
-                  )}
-                </p>
+                {tier === 'free' ? (
+                  <>
+                    <p className="font-syne font-bold text-4xl tabular-nums text-gold-soft">
+                      <CountUpInteger value={creditsRemaining ?? 0} duration={0.9} />
+                    </p>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-mute mt-2">
+                      credits remaining
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-syne font-bold text-3xl tabular-nums text-ink">Unlimited</p>
+                )}
               </div>
             </Glass>
             <Glass goldEdge>
-              <CardBand title="Monthly allowance" meta={tier} />
+              <CardBand title="Credit usage" meta={tier} />
               <div className="px-5 py-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 h-2 rounded-full overflow-hidden bg-[rgba(255,247,219,0.06)]">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${usagePct}%`,
-                        background: 'linear-gradient(90deg, #C9A84C 0%, var(--green) 100%)',
-                      }}
-                    />
-                  </div>
-                  <span className="font-mono text-sm tabular-nums text-ink-mute whitespace-nowrap">
-                    {used} / {limit}
-                  </span>
-                </div>
-                {freeLimitReached && (
-                  <p className="text-xs text-amber mt-4">
-                    You&apos;ve used your free generations.{' '}
-                    <Link href="/upgrade" className="underline text-gold-soft">
-                      Upgrade to Pro
-                    </Link>
-                  </p>
+                {tier === 'free' ? (
+                  <>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1 h-2 rounded-full overflow-hidden bg-[rgba(255,247,219,0.06)]">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${creditsUsagePct}%`,
+                            background: 'linear-gradient(90deg, #C9A84C 0%, var(--green) 100%)',
+                          }}
+                        />
+                      </div>
+                      <span className="font-mono text-sm tabular-nums text-ink-mute whitespace-nowrap">
+                        {creditsUsed} / {FREE_CREDIT_CAP}
+                      </span>
+                    </div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-mute mt-3">
+                      {creditsUsed} of {FREE_CREDIT_CAP} credits used
+                    </p>
+                    {creditsExhausted && (
+                      <p className="text-xs text-amber mt-4">
+                        You&apos;ve used all your free credits this month.{' '}
+                        <Link href="/upgrade" className="underline text-gold-soft">
+                          Upgrade to Pro
+                        </Link>
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-ink-mute">Pro includes unlimited AI actions.</p>
                 )}
               </div>
             </Glass>

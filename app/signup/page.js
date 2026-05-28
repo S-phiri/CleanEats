@@ -1,24 +1,64 @@
 'use client'
 import { useState } from 'react'
-import { createClient } from '../../lib/supabase-browser'
+import { createClient } from '../../lib/supabase/client'
 import Link from 'next/link'
 import { Mail } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMotionVariants, buttonTap, buttonHover, premiumHoverTransition } from '../../lib/motion'
 
+const FIELD_ERROR_CLASS =
+  'bg-[rgba(224,92,58,0.1)] border border-[rgba(224,92,58,0.3)] text-red rounded-xl px-3 py-2 text-sm mt-2'
+
+function getPasswordStrength(password) {
+  if (!password || password.length < 8) return 'weak'
+  const hasNumber = /\d/.test(password)
+  const hasSpecial = /[^A-Za-z0-9]/.test(password)
+  if (hasNumber && hasSpecial) return 'strong'
+  return 'medium'
+}
+
+const STRENGTH_STYLES = {
+  weak: { label: 'Weak', className: 'text-[#E05C3A]' },
+  medium: { label: 'Medium', className: 'text-[#C9A84C]' },
+  strong: { label: 'Strong', className: 'text-[#7CB518]' },
+}
+
+function validateSignupPassword(password, confirmPassword) {
+  const errors = {}
+  if (password.length < 8) {
+    errors.password = 'Password must be at least 8 characters'
+  } else if (!/\d/.test(password)) {
+    errors.password = 'Password must contain at least one number'
+  }
+  if (password !== confirmPassword) {
+    errors.confirmPassword = 'Passwords do not match'
+  }
+  return errors
+}
+
 export default function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const supabase = createClient()
   const m = useMotionVariants()
+  const strength = getPasswordStrength(password)
+  const strengthMeta = STRENGTH_STYLES[strength]
 
   async function handleSignup(e) {
     e.preventDefault()
-    setLoading(true)
     setError('')
+    const errors = validateSignupPassword(password, confirmPassword)
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      return
+    }
+    setFieldErrors({})
+    setLoading(true)
     const { error } = await supabase.auth.signUp({
       email, password,
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
@@ -54,9 +94,9 @@ export default function SignupPage() {
           transition={m.reduce ? { duration: 0 } : { duration: 0.45, ease: m.ease }}
         >
           <div className="flex justify-center mb-4"><Mail size={40} className="text-green" strokeWidth={2} /></div>
-          <h2 className="font-syne text-2xl font-bold mb-3">Check your email</h2>
+          <h2 className="font-syne text-2xl font-bold mb-3">Check your email to confirm your account</h2>
           <p className="text-muted max-w-sm mx-auto text-sm">
-            We sent a confirmation link to <strong className="text-[#F0EDE6]">{email}</strong>. Click it to activate your account.
+            Check your email to confirm your account. Check your spam folder if you don&apos;t see it.
           </p>
           <Link href="/login" className="mt-6 inline-block text-green text-sm hover:underline">Back to login</Link>
         </div>
@@ -139,8 +179,60 @@ export default function SignupPage() {
             </div>
             <div>
               <label className="block text-soft text-sm mb-2">Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="At least 8 characters" minLength={8}
-                className="ce-input" />
+              <input
+                type="password"
+                value={password}
+                onChange={e => {
+                  setPassword(e.target.value)
+                  setFieldErrors(fe => {
+                    if (!fe.password && !fe.confirmPassword) return fe
+                    const next = { ...fe }
+                    delete next.password
+                    if (e.target.value === confirmPassword) delete next.confirmPassword
+                    return next
+                  })
+                }}
+                required
+                placeholder="At least 8 characters"
+                autoComplete="new-password"
+                className="ce-input"
+              />
+              {password.length > 0 && (
+                <p className="mt-2 text-xs text-muted">
+                  Strength:{' '}
+                  <span className={`font-medium ${strengthMeta.className}`}>{strengthMeta.label}</span>
+                </p>
+              )}
+              {fieldErrors.password && (
+                <div className={FIELD_ERROR_CLASS} role="alert">
+                  {fieldErrors.password}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="block text-soft text-sm mb-2">Confirm password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => {
+                  setConfirmPassword(e.target.value)
+                  setFieldErrors(fe => {
+                    if (!fe.confirmPassword) return fe
+                    const next = { ...fe }
+                    delete next.confirmPassword
+                    return next
+                  })
+                }}
+                required
+                placeholder="Re-enter your password"
+                autoComplete="new-password"
+                className="ce-input"
+              />
+              {fieldErrors.confirmPassword && (
+                <div className={FIELD_ERROR_CLASS} role="alert">
+                  {fieldErrors.confirmPassword}
+                </div>
+              )}
             </div>
             <motion.button
               type="submit"

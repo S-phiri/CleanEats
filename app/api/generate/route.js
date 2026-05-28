@@ -1,11 +1,13 @@
-import { createClient } from '../../../lib/supabase-server'
+export const maxDuration = 60
+
+import { createClient } from '../../../lib/supabase/server'
 import { NextResponse } from 'next/server'
 import {
   mockProfilesById,
   defaultMockProfileId,
 } from '../../../lib/mock-plan-fixtures'
-
-const FREE_CREDIT_CAP = 10
+import { FREE_CREDIT_CAP } from '../../../lib/credits'
+const STUCK_GENERATION_LOCK_MS = 3 * 60 * 1000
 
 function isMockGeneration() {
   return process.env.MOCK_GENERATION === '1' || process.env.MOCK_GENERATION === 'true'
@@ -38,14 +40,34 @@ function messagesForAnthropic(messages, userContent) {
   })
 }
 
-/** Credit cost for this request (swapMap ingredient swaps never hit this API). */
-function resolveCreditCost(userContent, body) {
-  if (typeof body?.creditCost === 'number') return body.creditCost
-  if (isLogDeviationPrompt(userContent)) return 1
-  if (isMealSwapPrompt(userContent)) return 2
-  if (isIngredientSwapPrompt(userContent)) return 1
-  if (isShoppingPrepPrompt(userContent)) return 0
-  return 3
+/** Server-side prompt type: explicit body field or inferred from message content. */
+function resolvePromptType(userContent, body) {
+  const explicit = body?.promptType ?? body?.type
+  if (typeof explicit === 'string' && explicit.trim()) {
+    return explicit.trim().toLowerCase()
+  }
+  if (isShoppingPrepPrompt(userContent)) return 'shopping_prep'
+  if (isLogDeviationPrompt(userContent)) return 'log_deviation'
+  if (isMealSwapPrompt(userContent)) return 'swap_meal'
+  if (isIngredientSwapPrompt(userContent)) return 'swap_ingredient'
+  return 'full_plan'
+}
+
+/** Credit cost from prompt type only — never from the client body. */
+function resolveCreditCost(promptType) {
+  switch (promptType) {
+    case 'full_plan':
+    case 'generate_plan':
+      return 3
+    case 'swap_meal':
+    case 'swap_ingredient':
+    case 'log_deviation':
+      return 1
+    case 'shopping_prep':
+      return 0
+    default:
+      return 1
+  }
 }
 
 function creditsRemaining(tier, creditsUsed) {
@@ -90,18 +112,20 @@ async function ensureMonthlyCreditReset(supabase, userId, profile) {
   return profile?.credits_used ?? 0
 }
 
-async function incrementCreditsUsed(supabase, userId, creditsUsed, amount) {
-  const next = creditsUsed + amount
-  const { error } = await supabase
-    .from('profiles')
-    .update({ credits_used: next })
-    .eq('id', userId)
+/** Atomically increment credits for free tier; returns false if over cap or RPC error. */
+async function chargeCreditsAtomically(supabase, userId, creditCost) {
+  const { data: allowed, error } = await supabase.rpc('increment_credits_if_under_cap', {
+    p_user_id: userId,
+    p_amount: creditCost,
+    p_cap: FREE_CREDIT_CAP,
+  })
 
   if (error) {
-    console.error('Credit increment error:', error)
-    return creditsUsed
+    console.error('increment_credits_if_under_cap error:', error)
+    return { ok: false, rpcError: true }
   }
-  return next
+
+  return { ok: !!allowed }
 }
 
 function mockAnthropicPayload(planPart, shoppingPart, isSecondCall) {
@@ -121,6 +145,18 @@ async function releaseGenerationLock(supabase, userId) {
   await supabase.from('profiles').update({ is_generating: false }).eq('id', userId)
 }
 
+async function clearStuckGenerationLock(supabase, userId, profile) {
+  if (!profile?.is_generating) return profile
+
+  const updatedAt = profile.updated_at ? new Date(profile.updated_at).getTime() : NaN
+  if (Number.isNaN(updatedAt) || Date.now() - updatedAt <= STUCK_GENERATION_LOCK_MS) {
+    return profile
+  }
+
+  await releaseGenerationLock(supabase, userId)
+  return { ...profile, is_generating: false }
+}
+
 export async function POST(request) {
   const supabase = createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -132,9 +168,9 @@ export async function POST(request) {
   const body = await request.json()
   const { messages, max_tokens, model, savePlan } = body
 
-  const { data: profile } = await supabase
+  let { data: profile } = await supabase
     .from('profiles')
-    .select('tier, generations_this_month, is_generating, credits_used, last_reset_date')
+    .select('tier, generations_this_month, is_generating, credits_used, last_reset_date, updated_at')
     .eq('id', user.id)
     .single()
 
@@ -144,6 +180,7 @@ export async function POST(request) {
 
   /** Finalize after client merges meal + shopping JSON — insert plan, increment quota, release lock. */
   if (savePlan && typeof savePlan === 'object') {
+    let generationLockCleared = false
     try {
       const { data: savedPlan, error: insErr } = await supabase
         .from('plans')
@@ -159,9 +196,11 @@ export async function POST(request) {
 
       if (insErr) {
         await releaseGenerationLock(supabase, user.id)
+        generationLockCleared = true
         return jsonWithCredits({ error: insErr.message }, tier, creditsUsed, 500)
       }
 
+      // generations_this_month: analytics only — quota is enforced via credits_used (FREE_CREDIT_CAP).
       await supabase
         .from('profiles')
         .update({
@@ -170,11 +209,17 @@ export async function POST(request) {
         })
         .eq('id', user.id)
 
+      generationLockCleared = true
       return jsonWithCredits({ planId: savedPlan.id }, tier, creditsUsed)
     } catch (err) {
       console.error('Save plan error:', err)
       await releaseGenerationLock(supabase, user.id)
+      generationLockCleared = true
       return jsonWithCredits({ error: 'Failed to save plan' }, tier, creditsUsed, 500)
+    } finally {
+      if (!generationLockCleared) {
+        await releaseGenerationLock(supabase, user.id)
+      }
     }
   }
 
@@ -183,7 +228,8 @@ export async function POST(request) {
   }
 
   const userContent = messages[0]?.content ?? ''
-  const creditCost = resolveCreditCost(userContent, body)
+  const promptType = resolvePromptType(userContent, body)
+  const creditCost = resolveCreditCost(promptType)
   /** Pairs with meal-plan call; do not double-count free-tier generations. */
   const skipQuotaIncrement = isShoppingPrepPrompt(userContent)
   const skipGenerationLock =
@@ -192,22 +238,35 @@ export async function POST(request) {
     isMealSwapPrompt(userContent) ||
     isLogDeviationPrompt(userContent)
 
-  if (tier === 'free' && creditCost > 0 && creditsUsed + creditCost > FREE_CREDIT_CAP) {
-    return jsonWithCredits(
-      {
-        error: 'CREDITS_EXHAUSTED',
-        message:
-          'You have used all your free credits this month. Upgrade to Pro for unlimited generations.',
-      },
-      tier,
-      creditsUsed,
-      402
-    )
+  if (tier === 'free' && creditCost > 0) {
+    const charge = await chargeCreditsAtomically(supabase, user.id, creditCost)
+    if (charge.rpcError) {
+      return jsonWithCredits(
+        { error: 'Failed to verify credits' },
+        tier,
+        creditsUsed,
+        500
+      )
+    }
+    if (!charge.ok) {
+      return jsonWithCredits(
+        {
+          error: 'CREDITS_EXHAUSTED',
+          message: 'No credits remaining',
+        },
+        tier,
+        creditsUsed,
+        402
+      )
+    }
+    creditsUsed += creditCost
   }
 
   let generationLockHeld = false
 
   if (!skipGenerationLock) {
+    profile = await clearStuckGenerationLock(supabase, user.id, profile)
+
     if (profile?.is_generating) {
       return jsonWithCredits(
         {
@@ -259,9 +318,6 @@ export async function POST(request) {
       }
       const second = isShoppingPrepPrompt(userContent)
       const payload = mockAnthropicPayload(bundle.plan, bundle.shopping, second)
-      if (creditCost > 0) {
-        creditsUsed = await incrementCreditsUsed(supabase, user.id, creditsUsed, creditCost)
-      }
       return jsonWithCredits(payload, tier, creditsUsed)
     } finally {
       if (generationLockHeld) {
@@ -294,10 +350,6 @@ export async function POST(request) {
         creditsUsed,
         response.status
       )
-    }
-
-    if (creditCost > 0) {
-      creditsUsed = await incrementCreditsUsed(supabase, user.id, creditsUsed, creditCost)
     }
 
     return jsonWithCredits(data, tier, creditsUsed)

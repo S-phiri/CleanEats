@@ -1,4 +1,4 @@
-import { createClient } from '../lib/supabase-server'
+import { createClient } from '../lib/supabase/server'
 import Nav from '../Nav'
 import Footer from '../components/layout/Footer'
 import Hero from '../components/landing/Hero'

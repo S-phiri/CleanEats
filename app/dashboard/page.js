@@ -1,7 +1,8 @@
-import { createClient } from '../../lib/supabase-server'
+import { createClient } from '../../lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Nav from '../../Nav'
 import DashboardClient from '../../components/DashboardClient'
+import { creditsRemainingForProfile } from '../../lib/credits'
 
 export default async function Dashboard() {
   const supabase = createClient()
@@ -48,10 +49,8 @@ export default async function Dashboard() {
     : null
 
   const tier = profile?.tier || 'free'
-  const used = profile?.generations_this_month || 0
-  const limit = tier === 'free' ? 2 : '∞'
   const hasProfile = !!(profile?.profile_data && profile.profile_data.goal)
-  const freeLimitReached = tier === 'free' && used >= 2
+  const initialCreditsRemaining = creditsRemainingForProfile(profile)
   const displayName = profile?.name || user.email.split('@')[0]
   const countryCode = profile?.profile_data?.countryCode
   const location = countryCode === 'zm' ? 'Lusaka' : countryCode === 'ke' ? 'Nairobi' : countryCode === 'za' ? 'Johannesburg' : 'Your market'
@@ -64,10 +63,8 @@ export default async function Dashboard() {
         displayName={displayName}
         plans={plans || []}
         tier={tier}
-        used={used}
-        limit={limit}
         hasProfile={hasProfile}
-        freeLimitReached={freeLimitReached}
+        initialCreditsRemaining={initialCreditsRemaining}
         latestPlan={latestPlan}
         location={location}
         profileData={profile?.profile_data}

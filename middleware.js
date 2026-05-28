@@ -1,5 +1,5 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
+import { createMiddlewareClient } from './lib/supabase/server'
 
 export async function middleware(request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -8,7 +8,7 @@ export async function middleware(request) {
   if (!supabaseUrl || !supabaseAnonKey) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(
-        '[CleanEats] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Copy .env.local.example → .env.local and add your Supabase keys. Auth middleware is skipped until then.'
+        '[CleanEats] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Copy .env.example → .env.local and add your Supabase keys. Auth middleware is skipped until then.'
       )
       return NextResponse.next({ request })
     }
@@ -18,27 +18,7 @@ export async function middleware(request) {
     })
   }
 
-  let supabaseResponse = NextResponse.next({ request })
-
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll()
-      },
-      setAll(cookiesToSet, headers) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-        supabaseResponse = NextResponse.next({ request })
-        cookiesToSet.forEach(({ name, value, options }) =>
-          supabaseResponse.cookies.set(name, value, options)
-        )
-        if (headers && typeof headers === 'object') {
-          Object.entries(headers).forEach(([key, value]) =>
-            supabaseResponse.headers.set(key, value)
-          )
-        }
-      },
-    },
-  })
+  const { supabase, getResponse } = createMiddlewareClient(request)
 
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -55,7 +35,8 @@ export async function middleware(request) {
     return NextResponse.redirect(loginUrl)
   }
 
-  if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')) {
+  const authGuestOnlyPaths = ['/login', '/signup', '/forgot-password']
+  if (user && authGuestOnlyPaths.includes(request.nextUrl.pathname)) {
     if (process.env.NODE_ENV !== 'production') {
       console.log('[CleanEats middleware] session present → redirect /login|/signup → /dashboard')
     }
@@ -64,7 +45,7 @@ export async function middleware(request) {
     return NextResponse.redirect(dashUrl)
   }
 
-  return supabaseResponse
+  return getResponse()
 }
 
 export const config = {

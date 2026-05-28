@@ -14,7 +14,7 @@ Next.js app: Supabase auth + profiles, AI meal plans (Anthropic), saved plans, p
 | Dashboard + plan list | `app/dashboard/page.js` |
 | Plan viewer (tabs, theme, regenerate) | `app/plan/[id]/page.js`, `components/PlanViewClient.js` |
 | Upgrade placeholder (no Stripe yet) | `app/upgrade/page.js` |
-| Supabase helpers | `lib/supabase-server.js`, `lib/supabase-browser.js` |
+| Supabase helpers | `lib/supabase/server.js`, `lib/supabase/client.js`, `lib/supabase/admin.js` |
 | Countries / TDEE | `lib/utils.js` |
 | Next dev shim | `scripts/fix-next-parseurl.js` (runs on `npm install` via `postinstall`) |
 

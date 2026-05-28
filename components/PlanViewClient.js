@@ -11,7 +11,7 @@ import Glass from './primitives/Glass'
 import DayChips from './plan/DayChips'
 import SlotList from './plan/SlotList'
 import RecipePanel from './plan/RecipePanel'
-import { createClient } from '../lib/supabase-browser'
+import { createClient } from '../lib/supabase/client'
 import { COUNTRIES, calcTDEE } from '../lib/utils'
 import {
   buildStyleInstruction,
@@ -23,6 +23,8 @@ import {
 import { buildMealPrepPromptBlock, buildPrepGuideInstructions } from '../lib/meal-prep-prompt'
 import { parseAssistantJson } from '../lib/parse-assistant-json'
 import { getLocalSwaps } from '../lib/ingredient-swaps'
+import { getCreditsExhaustedPayload } from '../lib/generate-api-errors'
+import CreditsExhaustedAlert from './CreditsExhaustedAlert'
 
 const SHOPPING_CATEGORIES = [
   'Produce',
@@ -161,6 +163,7 @@ export default function PlanViewClient({
   const [checked, setChecked] = useState({})
   const [regenLoading, setRegenLoading] = useState(false)
   const [regenError, setRegenError] = useState('')
+  const [regenCreditsExhausted, setRegenCreditsExhausted] = useState(false)
   const [livePlanData, setLivePlanData] = useState(initialPlanData || {})
   const [swappingPortionIndex, setSwappingPortionIndex] = useState(null)
   const [swapMealLoading, setSwapMealLoading] = useState(false)
@@ -291,6 +294,8 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
 {"ingredient":"string","grams":number,"measure":"string"}`
 
     setSwappingPortionIndex(portionIndex)
+    setRegenError('')
+    setRegenCreditsExhausted(false)
     try {
       const r = await fetch('/api/generate', {
         method: 'POST',
@@ -298,11 +303,8 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
         body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], max_tokens: 500 }),
       })
       const d = await r.json()
-      if (d.error === 'LIMIT_REACHED') {
-        setRegenError('Free tier limit reached. Upgrade to Pro for unlimited plans.')
-        return
-      }
-      if (d.error) throw new Error(d.error)
+      if (applyCreditsExhausted(r, d)) return
+      if (d.error) throw new Error(d.message || d.error)
       const alt = parseAssistantJson(d)
       if (!alt?.ingredient) throw new Error('No alternative ingredient returned')
 
@@ -349,6 +351,8 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
 {"type":"string","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fat":number,"portions":[{"ingredient":"string","grams":number,"measure":"string"}]}`
 
     setSwapMealLoading(true)
+    setRegenError('')
+    setRegenCreditsExhausted(false)
     try {
       const r = await fetch('/api/generate', {
         method: 'POST',
@@ -356,11 +360,8 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
         body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], max_tokens: 2000 }),
       })
       const d = await r.json()
-      if (d.error === 'LIMIT_REACHED') {
-        setRegenError('Free tier limit reached. Upgrade to Pro for unlimited plans.')
-        return
-      }
-      if (d.error) throw new Error(d.error)
+      if (applyCreditsExhausted(r, d)) return
+      if (d.error) throw new Error(d.message || d.error)
       const alt = parseAssistantJson(d)
       if (!alt?.name) throw new Error('No alternative meal returned')
 
@@ -391,8 +392,17 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
     }
   }
 
+  function applyCreditsExhausted(response, data) {
+    const payload = getCreditsExhaustedPayload(response, data)
+    if (!payload) return false
+    setRegenCreditsExhausted(true)
+    setRegenError(payload.message)
+    return true
+  }
+
   async function regenerateWithPantry() {
     setRegenError('')
+    setRegenCreditsExhausted(false)
     const available = []
     const unavailable = []
     SHOPPING_CATEGORIES.forEach(cat => {
@@ -417,12 +427,11 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
         body: JSON.stringify({ messages: [{ role: 'user', content: prompt1 }], max_tokens: 7000 }),
       })
       const d1 = await r1.json()
-      if (d1.error === 'LIMIT_REACHED') {
-        setRegenError('Free tier limit reached. Upgrade to Pro for unlimited plans.')
+      if (applyCreditsExhausted(r1, d1)) {
         setRegenLoading(false)
         return
       }
-      if (d1.error) throw new Error(d1.error)
+      if (d1.error) throw new Error(d1.message || d1.error)
       const plan = parseAssistantJson(d1)
       if (!Array.isArray(plan.mealPlan) || plan.mealPlan.length === 0) {
         throw new Error('Model did not return a valid meal plan. Try again.')
@@ -435,7 +444,11 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
         body: JSON.stringify({ messages: [{ role: 'user', content: mealSummaryPrompt }], max_tokens: 4000 }),
       })
       const d2 = await r2.json()
-      if (d2.error) throw new Error(d2.error)
+      if (applyCreditsExhausted(r2, d2)) {
+        setRegenLoading(false)
+        return
+      }
+      if (d2.error) throw new Error(d2.message || d2.error)
       const extra = parseAssistantJson(d2)
 
       const profile = normaliseForm(planData)
@@ -562,6 +575,12 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
         </>
         )}
 
+        {regenError && (
+          <div className="bg-[rgba(224,92,58,0.1)] border border-[rgba(224,92,58,0.3)] text-red rounded-xl px-4 py-3 text-sm mb-4">
+            {regenCreditsExhausted ? <CreditsExhaustedAlert message={regenError} /> : regenError}
+          </div>
+        )}
+
         {/* Tabs */}
         <div className={`flex gap-1 p-1 rounded-xl border ${T.border} ${T.s2} mb-6 w-fit flex-wrap`}>
           {tabs.map(t => (
@@ -671,12 +690,6 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
               })}
             </div>
 
-            {regenError && (
-              <div className="bg-[rgba(224,92,58,0.1)] border border-[rgba(224,92,58,0.3)] text-red rounded-xl px-4 py-3 text-sm mb-4">
-                {regenError}
-              </div>
-            )}
-
             <button
               type="button"
               disabled={regenLoading}
@@ -686,7 +699,7 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
               {regenLoading ? 'Regenerating…' : 'Regenerate with what I have'}
             </button>
             <p className={`${T.muted} text-xs mt-3 max-w-xl`}>
-              Counts as one plan generation (meal + shopping are bundled). On Free, you get two new plans per month. Ticked lines are
+              Uses credits (full regen costs 3 on Free). Ticked lines are
               ingredients you already have — the new plan favours them; the shopping list is rebuilt from the new meals (not just
               hiding ticks).
             </p>

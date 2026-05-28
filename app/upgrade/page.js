@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import Nav from '../../Nav'
-import { createClient } from '../../lib/supabase-server'
+import { createClient } from '../../lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Glass from '../../components/primitives/Glass'
 import CardBand from '../../components/primitives/CardBand'
 import Button from '../../components/primitives/Button'
 import { Check } from 'lucide-react'
+import { creditsRemainingForProfile, creditsUsedForProfile, FREE_CREDIT_CAP } from '../../lib/credits'
 
 export default async function UpgradePage() {
   const supabase = createClient()
@@ -14,15 +15,16 @@ export default async function UpgradePage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('tier, generations_this_month')
+    .select('tier, credits_used, last_reset_date')
     .eq('id', user.id)
     .single()
 
   const tier = profile?.tier || 'free'
-  const used = profile?.generations_this_month || 0
+  const creditsUsed = creditsUsedForProfile(profile)
+  const creditsRemaining = creditsRemainingForProfile(profile)
 
   const perks = [
-    'Unlimited AI plan generations per month',
+    'Unlimited AI credits per month',
     'Full 5-day plans with local shopping prices',
     'Prep guide + saved plans',
   ]
@@ -35,7 +37,14 @@ export default async function UpgradePage() {
         <h1 className="font-syne text-3xl font-bold mb-2 text-ink">Upgrade to Pro</h1>
         <p className="text-ink-mute text-sm mb-10 leading-relaxed">
           You&apos;re on the <span className="text-gold-soft font-semibold">{tier}</span> tier
-          {tier === 'free' && <> — {used} of 2 plan generations used this month.</>}. Stripe checkout is
+          {tier === 'free' && (
+            <>
+              {' '}
+              — {creditsUsed} of {FREE_CREDIT_CAP} credits used
+              {creditsRemaining !== null ? ` (${creditsRemaining} remaining)` : ''}.
+            </>
+          )}
+          . Stripe checkout is
           not wired yet; this page is a placeholder so dashboard links don&apos;t 404.
         </p>
 

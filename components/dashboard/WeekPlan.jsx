@@ -5,30 +5,42 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import Glass from '../primitives/Glass'
 import CardBand from '../primitives/CardBand'
 import IconBtn from '../primitives/IconBtn'
+import {
+  formatPlanDayWeekdayShort,
+  getPlanDayDate,
+} from '../../lib/plan-dates'
 
-export default function WeekPlan({ mealPlan = [], empty }) {
-  const today = new Date().getDay()
+export default function WeekPlan({ mealPlan = [], empty, locationLabel = '' }) {
   const days = mealPlan.length
-    ? mealPlan.map((d, i) => ({
-        num: d.day ?? i + 1,
-        label: (d.dayName || `Day ${i + 1}`).slice(0, 3).toUpperCase(),
-        meals: (d.meals || []).length,
-        isToday: i === 0,
-        active: i === 0,
-      }))
-    : [1, 2, 3, 4, 5, 6, 7].map((n, i) => ({
-        num: n,
-        label: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i],
-        meals: 0,
-        isToday: (i + 1) % 7 === today,
-        active: i === 0,
-      }))
+    ? mealPlan.map((d, i) => {
+        const date = getPlanDayDate(i)
+        return {
+          num: date.getDate(),
+          label: formatPlanDayWeekdayShort(i),
+          meals: (d.meals || []).length,
+          isToday: i === 0,
+          active: i === 0,
+        }
+      })
+    : [0, 1, 2, 3, 4, 5, 6].map((offset) => {
+        const date = getPlanDayDate(offset)
+        return {
+          num: date.getDate(),
+          label: formatPlanDayWeekdayShort(offset),
+          meals: 0,
+          isToday: offset === 0,
+          active: offset === 0,
+        }
+      })
 
   const totalMeals = mealPlan.reduce((s, d) => s + (d.meals?.length || 0), 0)
 
   return (
     <Glass goldEdge>
-      <CardBand title="This Week's Plan" meta={empty ? 'No plan' : 'Active cycle'} />
+      <CardBand
+        title="This Week's Plan"
+        meta={empty ? 'No plan' : locationLabel || 'Active cycle'}
+      />
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -44,9 +56,9 @@ export default function WeekPlan({ mealPlan = [], empty }) {
         </div>
 
         <div className="grid grid-cols-7 gap-2 mb-5">
-          {days.map((d) => (
+          {days.map((d, idx) => (
             <div
-              key={d.num}
+              key={idx}
               className={`relative flex flex-col items-center justify-center min-h-[88px] rounded-[var(--r-md)] border px-1 py-3 ${
                 d.active
                   ? 'bg-green/10 border-green/50'

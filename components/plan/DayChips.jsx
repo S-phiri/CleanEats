@@ -1,17 +1,27 @@
 'use client'
 
-const BLOCK_TAGS = ['Build · Volume', 'Threshold', 'Recovery', 'Deload', 'Peak', 'Rest', 'Active']
+import {
+  formatPlanDayLabel,
+  formatPlanDayWeekdayShort,
+  getPlanDayDate,
+} from '../../lib/plan-dates'
 
-export default function DayChips({ mealPlan, selectedIndex, onSelect }) {
+export default function DayChips({ mealPlan, selectedIndex, onSelect, locationLabel = '' }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-thin">
       {mealPlan.map((day, i) => {
         const active = i === selectedIndex
+        const date = getPlanDayDate(i)
+        const calendarDay = date.getDate()
+        const weekdayShort = formatPlanDayWeekdayShort(i)
+        const fullLabel = formatPlanDayLabel(i, locationLabel)
+
         return (
           <button
             key={i}
             type="button"
             onClick={() => onSelect(i)}
+            title={fullLabel}
             className={`shrink-0 min-w-[92px] min-h-[88px] flex flex-col items-center justify-center rounded-[var(--r-md)] border px-3 py-3 transition-colors ${
               active
                 ? 'bg-green/10 border-green/50'
@@ -19,13 +29,13 @@ export default function DayChips({ mealPlan, selectedIndex, onSelect }) {
             }`}
           >
             <span className={`font-syne font-bold text-[22px] tabular-nums ${active ? 'text-green-soft' : 'text-ink'}`}>
-              {day.day ?? i + 1}
+              {calendarDay}
             </span>
             <span className={`font-mono text-[9px] uppercase tracking-wider mt-1 ${active ? 'text-green-soft' : 'text-ink-mute'}`}>
-              {(day.dayName || `Day ${i + 1}`).slice(0, 3)}
+              {weekdayShort}
             </span>
-            <span className="font-mono text-[8px] uppercase tracking-wider text-ink-faint mt-1 text-center">
-              {BLOCK_TAGS[i % BLOCK_TAGS.length]}
+            <span className="font-mono text-[8px] uppercase tracking-wider text-ink-faint mt-1 text-center line-clamp-2">
+              {i === 0 && locationLabel ? String(locationLabel).toUpperCase() : `DAY ${day.day ?? i + 1}`}
             </span>
           </button>
         )

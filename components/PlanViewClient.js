@@ -13,15 +13,7 @@ import { parseAssistantJson } from '../lib/parse-assistant-json'
 import { getLocalSwaps } from '../lib/ingredient-swaps'
 import { getCreditsExhaustedPayload } from '../lib/generate-api-errors'
 import CreditsExhaustedAlert from './CreditsExhaustedAlert'
-
-function cityForCountry(countryCode) {
-  const code = (countryCode || '').toUpperCase()
-  if (code === 'ZM') return 'Lusaka'
-  if (code === 'KE') return 'Nairobi'
-  if (code === 'ZA') return 'Johannesburg'
-  return null
-}
-
+import { applyPlanDayLabels, buildLocationLabel, formatPlanDayLabel } from '../lib/plan-dates'
 
 function normaliseForm(planData) {
   return planData.profile && typeof planData.profile === 'object' ? planData.profile : {}
@@ -35,6 +27,7 @@ export default function PlanViewClient({
   planSubtitle,
   planData: initialPlanData,
   embedded = false,
+  locationLabel: locationLabelProp = '',
 }) {
   const [tab, setTab] = useState('meals')
   const [selectedDayIndex, setSelectedDayIndex] = useState(0)
@@ -54,6 +47,17 @@ export default function PlanViewClient({
   }, [initialPlanData])
 
   const planData = livePlanData
+
+  const locationLabel = useMemo(() => {
+    if (locationLabelProp) return locationLabelProp
+    return buildLocationLabel(normaliseForm(planData))
+  }, [locationLabelProp, planData])
+
+  const mealPlanRaw = Array.isArray(planData.mealPlan) ? planData.mealPlan : []
+  const mealPlan = useMemo(
+    () => applyPlanDayLabels(mealPlanRaw, locationLabel),
+    [mealPlanRaw, locationLabel]
+  )
 
   const hasWellness = useMemo(() => {
     const ws = planData.wellnessSupport
@@ -135,20 +139,22 @@ export default function PlanViewClient({
     const portion = meal?.portions?.[portionIndex]
     if (!portion?.ingredient || swappingPortionIndex !== null) return
 
-    const form = normaliseForm(planData)
-    const cd = COUNTRIES[form.countryCode] || COUNTRIES.other
     const substituteBlock = userSubstitute
       ? `User substitute to confirm: ${userSubstitute}
 Validate it works as a macro-equivalent replacement for ${portion.ingredient} (${portion.grams != null ? portion.grams + 'g' : '—'}).`
       : `Ingredient to replace: ${portion.ingredient} (${portion.grams != null ? portion.grams + 'g' : '—'})
-Suggest ONE replacement available in local Zambian supermarkets.`
+Suggest ONE replacement available in local supermarkets.`
+
+    const form = normaliseForm(planData)
+    const cd = COUNTRIES[form.countryCode] || COUNTRIES.other
+    const locationForPrompt = buildLocationLabel(form)
 
     const prompt = `INGREDIENT SWAP
 
 Parent meal: ${meal.name}
 ${substituteBlock}
 Meal macros: ${meal.calories ?? '—'} kcal, protein ${meal.protein ?? '—'}g, carbs ${meal.carbs ?? '—'}g, fat ${meal.fat ?? '—'}g
-Country: ${cd.name}. Local Zambian supermarkets: ${cd.modern}
+${locationForPrompt ? `Location: ${locationForPrompt}.` : ''} Country: ${cd.name}. Local stores: ${cd.modern}
 Diet: ${(form.diet || []).join(', ') || 'None'}
 Allergies: ${(form.allergies || []).join(', ') || 'None'}
 Never use: ${form.excludeIngredients || 'none'}
@@ -194,21 +200,22 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
 
     const form = normaliseForm(planData)
     const cd = COUNTRIES[form.countryCode] || COUNTRIES.other
-    const city = cityForCountry(form.countryCode) || cd.name
+    const locationForPrompt = buildLocationLabel(form)
     const dayNum = day?.day ?? selectedDayIndex + 1
+    const dayLabel = formatPlanDayLabel(selectedDayIndex, locationForPrompt)
     const prompt = `MEAL SWAP
 
 Current meal to replace: ${meal.name}
-Day: ${dayNum}${day?.dayName ? ` (${day.dayName})` : ''}
+Day: ${dayNum} (${dayLabel})
 Meal type: ${meal.type || 'Meal'}
 Current calories: ${meal.calories ?? '—'} kcal (keep similar within ~15%)
 User goal: ${form.goal || 'maintain'}
-City: ${city}. Country: ${cd.name}. Local stores: ${cd.modern}
+${locationForPrompt ? `Location: ${locationForPrompt}.` : ''} Country: ${cd.name}. Local stores: ${cd.modern}
 Diet: ${(form.diet || []).join(', ') || 'None'}
 Allergies: ${(form.allergies || []).join(', ') || 'None'}
 Never use: ${form.excludeIngredients || 'none'}
 
-Return ONE alternative meal with the same meal type, similar calories, using local ingredients available in ${city} (Zambian/local staples where appropriate).
+Return ONE alternative meal with the same meal type, similar calories, using local ingredients${locationForPrompt ? ` available in ${locationForPrompt}` : ` for ${cd.name}`}.
 
 CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and end with }.
 {"type":"string","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fat":number,"portions":[{"ingredient":"string","grams":number,"measure":"string"}]}`
@@ -263,7 +270,6 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
     return true
   }
 
-  const mealPlan = Array.isArray(planData.mealPlan) ? planData.mealPlan : []
   const prepGuide = Array.isArray(planData.prepGuide) ? planData.prepGuide : []
   const freq = (planData.mealFrequencyRecommendation || '').trim()
   const planSummary = (planData.planSummary || '').trim()
@@ -377,6 +383,7 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
                 <DayChips
                   mealPlan={mealPlan}
                   selectedIndex={selectedDayIndex}
+                  locationLabel={locationLabel}
                   onSelect={(i) => {
                     setSelectedDayIndex(i)
                     setSelectedMealIndex(0)

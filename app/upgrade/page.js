@@ -25,7 +25,7 @@ export default async function UpgradePage() {
 
   const perks = [
     'Unlimited AI credits per month',
-    'Full 5-day plans with local shopping prices',
+    'Full 7-day plans with local shopping prices',
     'Prep guide + saved plans',
   ]
 

@@ -48,6 +48,11 @@ import {
   mergeGapMeals,
   mealsFromPlanJson,
 } from '../../lib/meal-cache'
+import {
+  applyPlanDayLabels,
+  buildLocationLabel,
+  getLocalStartDateIso,
+} from '../../lib/plan-dates'
 
 function parseCsv(str) {
   return (str || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -261,6 +266,11 @@ export default function ProfilePage() {
       activity: form.activity,
     })
     const profileData = { ...form, weightKg: wkg, heightCm: hcm, archetype }
+    const locationLabel = buildLocationLabel(profileData)
+    const planContext = {
+      startDateIso: getLocalStartDateIso(),
+      locationLabel,
+    }
     const tdee = calcTDEE({ weightKg: wkg, heightCm: hcm, age: form.age, sex: form.sex, activity: form.activity, job: form.job, dailySteps: form.dailySteps })
     const br = form.budget === 'budget' ? cd.budgetL : form.budget === 'mid' ? cd.budgetM : cd.budgetH
     const culinaryStyle = form.culinaryStyle || 'mixed'
@@ -328,10 +338,10 @@ Return ONLY valid JSON, no markdown:
   "planTitle":"string","planSubtitle":"string"${wellnessJson},
   "tdee":${tdee||'null'},"targetCalories":number,"targetProtein":number,"targetCarbs":number,"targetFat":number,
   "days":5,"mealFrequencyRecommendation":"string or empty",
-  "mealPlan":[{"day":1,"dayName":"Monday","totalCalories":number,"meals":[{"type":"Breakfast","name":"Full name","description":"1 sentence","calories":number,"protein":number,"carbs":number,"fat":number,"portions":[{"ingredient":"name","grams":150,"measure":"1 cup"}]}]}]
+  "mealPlan":[{"day":1,"dayName":"","totalCalories":number,"meals":[{"type":"Breakfast","name":"Full name","description":"1 sentence","calories":number,"protein":number,"carbs":number,"fat":number,"portions":[{"ingredient":"name","grams":150,"measure":"1 cup"}]}]}]
 }`
 
-    const prompt2Base = `${jsonOnlyPrefix}Generate shopping list with local ${cd.currency} prices and batch prep guide for a 5-day meal plan in ${cd.name}.
+    const prompt2Base = `${jsonOnlyPrefix}Generate shopping list with local ${cd.currency} prices and batch prep guide for a 7-day meal plan in ${cd.name}.
 ${shoppingExtra}
 People: ${form.people}, Budget: ${form.budget} (~${br}), Never include: ${form.excludeIngredients||'none'}
 Local stores: ${cd.modern}
@@ -381,7 +391,7 @@ Return ONLY valid JSON:
         plan = {
           ...assembly.planMeta,
           ...assembly.context.daily,
-          days: 5,
+          days: 7,
           mealPlan: assembly.mealPlan,
         }
         console.log('CACHE HIT: full plan from library', assembly.stats)
@@ -400,6 +410,7 @@ Return ONLY valid JSON:
             max_tokens: 3000,
             promptType: 'cache_fill',
             cacheStats: assembly.stats,
+            planContext,
           }),
         })
         const dGap = await rGap.json()
@@ -416,7 +427,7 @@ Return ONLY valid JSON:
         plan = {
           ...assembly.planMeta,
           ...assembly.context.daily,
-          days: 5,
+          days: 7,
           mealPlan: mergeGapMeals(assembly, gapMeals, assembly.misses),
         }
         await upsertMealsToLibrary(gapMeals)
@@ -430,6 +441,7 @@ Return ONLY valid JSON:
             max_tokens: 8000,
             promptType: 'full_plan',
             cacheStats: assembly?.stats,
+            planContext,
           }),
         })
         const d1 = await r1.json()
@@ -446,13 +458,79 @@ Return ONLY valid JSON:
         await upsertMealsToLibrary(mealsFromPlanJson(plan))
       }
 
+      if (plan?.mealPlan && !assembly?.fullyCached && plan.mealPlan.length < 7) {
+        try {
+          const appendRes = await fetch('/api/plan/assemble', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              profileData,
+              tdee,
+              mealPlan: plan.mealPlan,
+              appendCacheDays: true,
+            }),
+          })
+          if (appendRes.ok) {
+            const appended = await appendRes.json()
+            let extendedPlan = appended.mealPlan || plan.mealPlan
+            if (appended.misses?.length > 0) {
+              const gapPrompt = buildGapFillPrompt(
+                appended.misses,
+                profileData,
+                appended.context,
+                cd,
+                {
+                  style: buildStyleInstruction(culinaryStyle, cd),
+                  staples: buildStaplesRetailBlock(culinaryStyle, cd),
+                  variety: buildVarietyCuisineBlock(form.cuisines),
+                }
+              )
+              const rGapAppend = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  messages: [{ role: 'user', content: gapPrompt }],
+                  max_tokens: 3000,
+                  promptType: 'cache_fill',
+                  planContext,
+                }),
+              })
+              const dGapAppend = await rGapAppend.json()
+              const exhaustedAppend = getCreditsExhaustedPayload(rGapAppend, dGapAppend)
+              if (exhaustedAppend) {
+                setCreditsExhausted(true)
+                setError(exhaustedAppend.message)
+                setGenerating(false)
+                return
+              }
+              if (dGapAppend.error) throw new Error(dGapAppend.message || dGapAppend.error)
+              const gapPayloadAppend = parseAssistantJson(dGapAppend)
+              extendedPlan = mergeGapMeals(
+                { mealPlan: extendedPlan },
+                gapPayloadAppend.meals || [],
+                appended.misses
+              )
+              await upsertMealsToLibrary(gapPayloadAppend.meals || [])
+            }
+            plan.mealPlan = extendedPlan
+          }
+        } catch (e) {
+          console.warn('Cache append for days 6–7 skipped:', e)
+        }
+      }
+
+      if (plan?.mealPlan) {
+        plan.days = 7
+        plan.mealPlan = applyPlanDayLabels(plan.mealPlan, locationLabel)
+      }
+
       // Call 2 \u2014 shopping + prep
       const mealSummary = plan.mealPlan.map(d =>
         d.meals.map(m => m.name + ': ' + (m.portions || []).map(p => p.grams + 'g ' + p.ingredient).join(', ')).join(' | ')
       ).join('\n')
       const p2 = prompt2Base.replace(
-        '5-day meal plan',
-        `5-day meal plan using these meals:\n${mealSummary}`
+        '7-day meal plan',
+        `7-day meal plan using these meals:\n${mealSummary}`
       )
 
       const r2 = await fetch('/api/generate', {

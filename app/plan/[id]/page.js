@@ -1,6 +1,7 @@
 import { createClient } from '../../../lib/supabase/server'
 import { redirect } from 'next/navigation'
 import PlanViewClient from '../../../components/PlanViewClient'
+import { buildLocationLabel } from '../../../lib/plan-dates'
 
 export default async function PlanPage({ params }) {
   const supabase = createClient()
@@ -20,9 +21,11 @@ export default async function PlanPage({ params }) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('tier')
+    .select('tier, profile_data')
     .eq('id', user.id)
     .single()
+
+  const locationLabel = buildLocationLabel(profile?.profile_data)
 
   return (
     <PlanViewClient
@@ -32,6 +35,7 @@ export default async function PlanPage({ params }) {
       planTitle={row.plan_title}
       planSubtitle={row.plan_subtitle}
       planData={row.plan_json}
+      locationLabel={locationLabel}
     />
   )
 }

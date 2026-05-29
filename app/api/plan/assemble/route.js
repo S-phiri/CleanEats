@@ -1,6 +1,10 @@
 import { createClient } from '../../../../lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { assembleMealPlan, buildCacheOnlyPlanMeta } from '../../../../lib/meal-cache'
+import {
+  appendCacheDays,
+  assembleMealPlan,
+  buildCacheOnlyPlanMeta,
+} from '../../../../lib/meal-cache'
 import { COUNTRIES } from '../../../../lib/utils'
 import { logCacheEvent } from '../../../../lib/log-api-cache'
 
@@ -17,13 +21,27 @@ export async function POST(request) {
   }
 
   const body = await request.json()
-  const { profileData, tdee } = body || {}
+  const { profileData, tdee, mealPlan, appendCacheDays: shouldAppend } = body || {}
 
   if (!profileData || !tdee) {
     return NextResponse.json({ error: 'profileData and tdee required' }, { status: 400 })
   }
 
   try {
+    if (shouldAppend && Array.isArray(mealPlan)) {
+      const appended = await appendCacheDays(supabase, mealPlan, profileData, tdee)
+      return NextResponse.json({
+        mealPlan: appended.mealPlan,
+        misses: appended.misses,
+        context: {
+          countryCode: appended.context.countryCode,
+          culinaryStyle: appended.context.culinaryStyle,
+          goal: appended.context.goal,
+          daily: appended.context.daily,
+        },
+      })
+    }
+
     const assembled = await assembleMealPlan(supabase, profileData, tdee)
     const cd = COUNTRIES[profileData.countryCode] || COUNTRIES.other
     const planMeta = buildCacheOnlyPlanMeta(profileData, assembled.context, cd)

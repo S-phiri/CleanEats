@@ -61,8 +61,20 @@ const SEED_META = {
   },
 }
 
+const ZM_SEED_META = {
+  countryCode: 'ZM',
+  goal: 'losefat',
+  culinaryStyle: 'mixed',
+  dietTags: ['No Restrictions'],
+  budgetTier: 'mid',
+  cuisineTags: ['Zambian'],
+  source: 'import',
+}
+
 async function main() {
-  const { mockProfilesById, MOCK_PROFILE_IDS } = await import('../lib/mock-plan-fixtures.js')
+  const { mockProfilesById, MOCK_PROFILE_IDS, zmLibrarySeedMeals } = await import(
+    '../lib/mock-plan-fixtures.js'
+  )
   const { libraryRowFromMeal } = await import('../lib/meal-cache.js')
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -105,7 +117,29 @@ async function main() {
     }
   }
 
-  console.log(`Seed complete: ${inserted} meals upserted, ${skipped} duplicates skipped.`)
+  for (const meal of zmLibrarySeedMeals || []) {
+    const row = libraryRowFromMeal(meal, ZM_SEED_META)
+    if (seen.has(row.content_hash)) {
+      skipped += 1
+      continue
+    }
+    seen.add(row.content_hash)
+
+    const { error } = await supabase.from('meals_library').upsert(row, {
+      onConflict: 'content_hash',
+      ignoreDuplicates: false,
+    })
+
+    if (error) {
+      console.error('Insert failed:', meal.name, error.message)
+    } else {
+      inserted += 1
+    }
+  }
+
+  console.log(
+    `Seed complete: ${inserted} meals upserted, ${skipped} duplicates skipped (includes ZM library extras).`
+  )
 }
 
 main().catch((e) => {

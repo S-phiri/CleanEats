@@ -8,7 +8,16 @@ import {
 } from '../../../lib/mock-plan-fixtures'
 import { FREE_CREDIT_CAP } from '../../../lib/credits'
 import { logCacheEvent } from '../../../lib/log-api-cache'
+import { planCalendarPromptBlock } from '../../../lib/plan-dates'
 const STUCK_GENERATION_LOCK_MS = 3 * 60 * 1000
+
+const ANTHROPIC_RATE_LIMIT_MESSAGE =
+  'High demand right now! Your plan is being prepared — please try again in 30 seconds.'
+
+function isAnthropicRateLimit(response, data) {
+  if (response?.status === 429) return true
+  return data?.error?.type === 'rate_limit_error'
+}
 
 function isMockGeneration() {
   return process.env.MOCK_GENERATION === '1' || process.env.MOCK_GENERATION === 'true'
@@ -35,14 +44,41 @@ function isCacheFillPrompt(userContent) {
   return typeof userContent === 'string' && userContent.includes('CACHE GAP FILL')
 }
 
+function isPlanGenerationPrompt(userContent) {
+  return (
+    typeof userContent === 'string' &&
+    (userContent.includes('Generate exactly 5 days') ||
+      userContent.includes('mealPlan') ||
+      isCacheFillPrompt(userContent))
+  )
+}
+
 const LOG_DEVIATION_MEAL_ADJUSTMENT = `When adjusting remaining meals, only modify portion sizes or swap to ingredients already listed in the user's existing meal plan for today. Do not introduce new ingredients the user would need to purchase. Work within what is already planned.`
 
-function messagesForAnthropic(messages, userContent) {
-  if (!isLogDeviationPrompt(userContent) || !Array.isArray(messages)) return messages
-  return messages.map((m, i) => {
-    if (i !== 0 || m.role !== 'user' || typeof m.content !== 'string') return m
-    return { ...m, content: `${m.content}\n\n${LOG_DEVIATION_MEAL_ADJUSTMENT}` }
-  })
+function messagesForAnthropic(messages, userContent, body) {
+  let augmented = messages
+
+  if (isLogDeviationPrompt(userContent) && Array.isArray(messages)) {
+    augmented = messages.map((m, i) => {
+      if (i !== 0 || m.role !== 'user' || typeof m.content !== 'string') return m
+      return { ...m, content: `${m.content}\n\n${LOG_DEVIATION_MEAL_ADJUSTMENT}` }
+    })
+  }
+
+  const planContext = body?.planContext
+  if (
+    isPlanGenerationPrompt(userContent) &&
+    planContext?.startDateIso &&
+    Array.isArray(augmented)
+  ) {
+    const block = planCalendarPromptBlock(planContext.startDateIso, planContext.locationLabel || '')
+    augmented = augmented.map((m, i) => {
+      if (i !== 0 || m.role !== 'user' || typeof m.content !== 'string') return m
+      return { ...m, content: `${m.content}\n\n${block}` }
+    })
+  }
+
+  return augmented
 }
 
 /** Server-side prompt type: explicit body field or inferred from message content. */
@@ -405,13 +441,24 @@ export async function POST(request) {
       body: JSON.stringify({
         model: model || 'claude-sonnet-4-20250514',
         max_tokens: max_tokens || 8000,
-        messages: messagesForAnthropic(messages, userContent),
+        messages: messagesForAnthropic(messages, userContent, body),
       }),
     })
 
     const data = await response.json()
 
     if (!response.ok) {
+      if (isAnthropicRateLimit(response, data)) {
+        return jsonWithCredits(
+          {
+            error: 'RATE_LIMITED',
+            message: ANTHROPIC_RATE_LIMIT_MESSAGE,
+          },
+          tier,
+          creditsUsed,
+          429
+        )
+      }
       return jsonWithCredits(
         { error: data.error?.message || 'Anthropic API error' },
         tier,

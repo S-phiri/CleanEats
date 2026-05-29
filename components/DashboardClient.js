@@ -12,13 +12,17 @@ import MarketPriceIndex from './dashboard/MarketPriceIndex'
 import DashboardToday from './dashboard/DashboardToday'
 import PlanViewClient from './PlanViewClient'
 import MobileBottomNav from './layout/MobileBottomNav'
-import MobileBottomNav from './layout/MobileBottomNav'
 import { createClient } from '../lib/supabase/client'
 import { parseAssistantJson } from '../lib/parse-assistant-json'
 import { getCreditsExhaustedPayload } from '../lib/generate-api-errors'
 import CreditsExhaustedAlert from './CreditsExhaustedAlert'
 import { FREE_CREDIT_CAP, creditsRemainingForProfile } from '../lib/credits'
 import { sanitiseMealInput } from '../lib/sanitise'
+import {
+  buildLocationLabel,
+  formatPlanDayLabel,
+  formatTodayEyebrow,
+} from '../lib/plan-dates'
 
 const MAIN_TABS = [
   { id: 'today', label: 'Today' },
@@ -90,15 +94,6 @@ function NavTierCredits({ tier, creditsRemaining }) {
   )
 }
 
-function formatDateEyebrow() {
-  const d = new Date()
-  return `${d.toLocaleDateString('en-GB', { weekday: 'long' })} · ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-}
-
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10)
-}
-
 function mealSortIndex(type) {
   const t = (type || '').toLowerCase()
   const i = MEAL_ORDER.findIndex((slot) => t.includes(slot))
@@ -165,7 +160,7 @@ export default function DashboardClient({
   hasProfile,
   initialCreditsRemaining = null,
   latestPlan,
-  location = '',
+  location: locationProp = '',
   profileData,
 }) {
   const [mainTab, setMainTab] = useState('today')
@@ -237,7 +232,8 @@ export default function DashboardClient({
   const todayMeals = mealPlan[0]?.meals || []
   const hasPlan = !!planJson && mealPlan.length > 0
   const currency = profileData?.countryCode === 'ke' ? 'KES' : profileData?.countryCode === 'za' ? 'ZAR' : 'ZMW'
-  const dateMeta = location ? `${formatDateEyebrow()} · ${location}` : formatDateEyebrow()
+  const location = buildLocationLabel(profileData) || locationProp || ''
+  const dateMeta = formatTodayEyebrow(location)
   const firstName = (displayName || 'Athlete').split(' ')[0]
   const creditsUsed =
     tier === 'free' && creditsRemaining !== null
@@ -246,9 +242,7 @@ export default function DashboardClient({
   const creditsUsagePct =
     tier === 'free' ? Math.min((creditsUsed / FREE_CREDIT_CAP) * 100, 100) : 100
   const creditsExhausted = tier === 'free' && creditsRemaining === 0
-  const planMeta = latestPlan
-    ? `Day · ${new Date(latestPlan.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-    : 'No plan'
+  const planMeta = latestPlan ? formatPlanDayLabel(0, location) : 'No plan'
 
   useEffect(() => {
     setLiveTodayMeals(sortTodayMeals(todayMeals))
@@ -653,6 +647,7 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
               planTitle={latestPlan.plan_title}
               planSubtitle={latestPlan.plan_subtitle}
               planData={planMetrics}
+              locationLabel={location}
             />
           )}
         </>

@@ -8,14 +8,14 @@ const plans = [
     name: 'Free',
     price: '$0',
     period: 'forever',
-    features: ['10 credits/month', '3-day plans', 'Basic shopping list'],
+    features: ['10 credits/month', '7-day plans', 'Basic shopping list'],
     highlight: false,
   },
   {
     name: 'Pro',
     price: '$6',
     period: '/month',
-    features: ['Unlimited generations', '5-day plans', 'Local prices & shopping list', 'Prep guide', 'Save plans'],
+    features: ['Unlimited generations', '7-day plans', 'Local prices & shopping list', 'Prep guide', 'Save plans'],
     highlight: true,
   },
   {

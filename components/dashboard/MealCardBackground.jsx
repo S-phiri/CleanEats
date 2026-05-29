@@ -38,7 +38,8 @@ export default function MealCardBackground({
             fill
             sizes="(max-width: 768px) 100vw, 400px"
             className="object-cover"
-            onLoadingComplete={() => setLoaded(true)}
+            onLoad={() => setLoaded(true)}
+            onError={() => setLoaded(false)}
           />
           <div className="absolute inset-0" style={{ background: GRADIENT }} />
         </div>

@@ -9,12 +9,14 @@
     "start": "next start",
     "lint": "next lint",
     "verify:env": "node scripts/verify-supabase-env.js",
+    "verify:unsplash": "node scripts/verify-unsplash-env.js",
     "seed:meals": "node scripts/seed-meals-library.js",
     "postinstall": "node scripts/fix-next-parseurl.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.100.1",
+    "@vercel/analytics": "^2.0.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.16.0",
     "next": "14.2.35",

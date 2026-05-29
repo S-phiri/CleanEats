@@ -54,6 +54,19 @@ Optional — development, testing, or local runs without calling Anthropic.
 
 ---
 
+## Unsplash (meal card images)
+
+Required for dashboard/plan meal photos. Requests go through `/api/unsplash/search` (server-side; no browser CORS).
+
+- [ ] `UNSPLASH_ACCESS_KEY` — Unsplash **Access Key** from [unsplash.com/developers](https://unsplash.com/developers) (**server-only**; do not use `NEXT_PUBLIC_` for new setups)
+- [ ] **Redeploy** after adding or changing this variable (not baked into client bundle, but required at runtime on the server)
+
+Legacy fallback: if only `NEXT_PUBLIC_UNSPLASH_ACCESS_KEY` is set, the API route still works, but prefer `UNSPLASH_ACCESS_KEY` on Vercel.
+
+Verify locally: `npm run verify:unsplash`
+
+---
+
 ## Cron
 
 Required when `/api/reset-locks` (or similar admin cron routes) is deployed:
@@ -71,4 +84,4 @@ Required when `/api/reset-locks` (or similar admin cron routes) is deployed:
 | Direct `.env` imports in `/app` or `/lib` | None found |
 | `.env.local` in `.gitignore` | Yes |
 
-**Discovered `process.env` references:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `MOCK_GENERATION`, `MOCK_FIXTURE_ID`, `CRON_SECRET`, `NODE_ENV`
+**Discovered `process.env` references:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `UNSPLASH_ACCESS_KEY`, `NEXT_PUBLIC_UNSPLASH_ACCESS_KEY`, `MOCK_GENERATION`, `MOCK_FIXTURE_ID`, `CRON_SECRET`, `NODE_ENV`

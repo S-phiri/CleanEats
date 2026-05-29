@@ -1,4 +1,5 @@
 import '../globals.css'
+import { Analytics } from '@vercel/analytics/react'
 import Providers from './providers'
 
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,7 @@ export default function RootLayout({ children }) {
         <div className="bg-grid" aria-hidden />
         <div className="bg-tri" aria-hidden />
         <Providers>{children}</Providers>
+        <Analytics />
       </body>
     </html>
   )

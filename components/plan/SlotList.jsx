@@ -1,18 +1,10 @@
 'use client'
 
-import { Sunrise, Sun, Apple, Moon, ChevronRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import Glass from '../primitives/Glass'
 import CardBand from '../primitives/CardBand'
 import MealCardBackground from '../dashboard/MealCardBackground'
 import { useMealImages } from '../../hooks/useMealImages'
-
-function slotIcon(type) {
-  const t = (type || '').toLowerCase()
-  if (t.includes('break')) return Sunrise
-  if (t.includes('lunch')) return Sun
-  if (t.includes('dinner')) return Moon
-  return Apple
-}
 
 export default function SlotList({ meals = [], selectedIndex, onSelect, doneSet = new Set() }) {
   const imagesByName = useMealImages(meals)
@@ -20,9 +12,8 @@ export default function SlotList({ meals = [], selectedIndex, onSelect, doneSet 
   return (
     <Glass goldEdge>
       <CardBand title="Meal slots" meta={`${meals.length} meals`} />
-      <div className="divide-y divide-[var(--line)]">
+      <div className="flex flex-col gap-2 p-2">
         {meals.map((meal, i) => {
-          const Icon = slotIcon(meal.type)
           const active = i === selectedIndex
           const done = doneSet.has(i)
           const image = meal.name ? imagesByName[meal.name] : null
@@ -32,46 +23,46 @@ export default function SlotList({ meals = [], selectedIndex, onSelect, doneSet 
               key={i}
               as="button"
               image={image}
-              className={`w-full text-left min-h-[80px] transition-colors ${
-                active ? 'bg-green/10' : done ? 'bg-gold/5' : 'hover:bg-base-3/30'
+              overlay="card"
+              showAttribution={false}
+              className={`w-full text-left h-[90px] min-h-[90px] rounded-xl transition-all ${
+                active
+                  ? 'ring-2 ring-green/70 ring-offset-2 ring-offset-base'
+                  : 'hover:ring-1 hover:ring-white/20'
               }`}
               buttonProps={{
                 type: 'button',
                 onClick: () => onSelect(i),
               }}
             >
-              <div className="grid grid-cols-[48px_1fr_auto] gap-3 items-center p-4 pb-7 w-full">
-                <div
-                  className="flex h-12 w-12 items-center justify-center rounded-lg border border-[var(--line)] bg-base-3/50 shrink-0 backdrop-blur-sm"
-                  aria-hidden
-                >
-                  <Icon size={20} strokeWidth={2} className="text-gold" />
-                </div>
-                <div className="min-w-0">
-                  <p
-                    className={`font-syne font-bold text-[13px] uppercase tracking-wide ${
-                      active ? 'text-green-soft' : 'text-gold'
-                    }`}
-                  >
+              <div className="relative flex h-[90px] w-full flex-col p-3 text-left">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-gold shrink-0 drop-shadow-sm">
                     {meal.type || 'Meal'}
-                  </p>
-                  <p className="font-syne font-bold text-[19px] text-ink truncate">{meal.name || 'Untitled'}</p>
-                  {meal.description && (
-                    <p className="text-[13px] text-ink-mute line-clamp-1 mt-0.5">{meal.description}</p>
-                  )}
+                  </span>
+                  <ChevronRight
+                    size={16}
+                    strokeWidth={2}
+                    className={`shrink-0 drop-shadow-sm ${active ? 'text-green-soft' : 'text-white/50'}`}
+                    aria-hidden
+                  />
                 </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  {done && (
-                    <span className="font-mono text-[9px] uppercase text-gold-soft px-2 py-0.5 rounded-full border border-gold/30">
-                      Done
+
+                <div className="mt-auto flex items-end justify-between gap-2">
+                  <p className="font-syne font-bold text-[15px] text-white leading-tight truncate drop-shadow-md min-w-0">
+                    {meal.name || 'Untitled'}
+                  </p>
+                  {(done || (active && !done)) && (
+                    <span
+                      className={`font-mono text-[8px] uppercase shrink-0 px-1.5 py-0.5 rounded-full border backdrop-blur-sm ${
+                        done
+                          ? 'text-gold-soft border-gold/40 bg-black/45'
+                          : 'text-green-soft border-green/40 bg-black/45'
+                      }`}
+                    >
+                      {done ? 'Done' : 'Now'}
                     </span>
                   )}
-                  {active && !done && (
-                    <span className="font-mono text-[9px] uppercase text-green-soft px-2 py-0.5 rounded-full border border-green/40 bg-green/10">
-                      NOW
-                    </span>
-                  )}
-                  <ChevronRight size={18} className="text-ink-mute" />
                 </div>
               </div>
             </MealCardBackground>

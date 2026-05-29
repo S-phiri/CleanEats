@@ -37,27 +37,30 @@ function mealStatus(index, total, slotKey, loggedSlots) {
 function StatusPill({ status }) {
   if (status === 'logged') {
     return (
-      <span className="font-mono text-[10px] uppercase tracking-wider text-green-soft px-2.5 py-1 rounded-full border border-green/50 bg-green/15">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-green-soft px-2.5 py-1 rounded-full border border-green/50 bg-black/50 backdrop-blur-sm">
         Logged
       </span>
     )
   }
   if (status === 'done') {
     return (
-      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-green text-[#0E1A03]" aria-label="Done">
+      <span
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-green text-[#0E1A03] shadow-md"
+        aria-label="Done"
+      >
         <Check size={16} strokeWidth={2} />
       </span>
     )
   }
   if (status === 'now') {
     return (
-      <span className="font-mono text-[10px] uppercase tracking-wider text-green-soft px-2.5 py-1 rounded-full border border-green/40 bg-green/10">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-green-soft px-2.5 py-1 rounded-full border border-green/50 bg-black/50 backdrop-blur-sm">
         NOW
       </span>
     )
   }
   return (
-    <span className="font-mono text-[10px] uppercase tracking-wider text-ink-faint px-2.5 py-1 rounded-full border border-[var(--line)]">
+    <span className="font-mono text-[10px] uppercase tracking-wider text-white/80 px-2.5 py-1 rounded-full border border-white/25 bg-black/45 backdrop-blur-sm">
       Upcoming
     </span>
   )
@@ -69,7 +72,7 @@ export default function DashboardToday({ meals = [], loggedSlots = new Set() }) 
 
   return (
     <Glass goldEdge className="overflow-hidden">
-      <div className="divide-y divide-[var(--line)]">
+      <div className="flex flex-col gap-2 p-2">
         {sorted.map((meal, i) => {
           const slotKey = mealSlotKey(meal.type)
           const status = mealStatus(i, sorted.length, slotKey, loggedSlots)
@@ -79,24 +82,30 @@ export default function DashboardToday({ meals = [], loggedSlots = new Set() }) 
             <MealCardBackground
               key={`${meal.type}-${meal.name}-${i}`}
               image={image}
-              className="min-h-[88px]"
+              overlay="card"
+              showAttribution={false}
+              className="w-full h-[170px] min-h-[160px] max-h-[180px] rounded-xl"
             >
-              <div className="flex items-start gap-4 px-5 py-5 pb-7">
-                <div className="flex-1 min-w-0">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-gold mb-1">
+              <div className="relative flex h-full flex-col p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-gold shrink-0 drop-shadow-sm">
                     {meal.type || 'Meal'}
-                  </p>
-                  <p className="font-syne font-bold text-lg text-ink leading-tight">{meal.name || 'Untitled'}</p>
-                  {meal.description && (
-                    <p className="text-sm text-ink-mute mt-1 line-clamp-1">{meal.description}</p>
-                  )}
+                  </span>
+                  <div className="text-right shrink-0">
+                    <p className="font-syne font-bold text-2xl tabular-nums text-white leading-none drop-shadow-md">
+                      {meal.calories != null ? meal.calories : '—'}
+                    </p>
+                    <p className="font-mono text-[9px] uppercase tracking-wider text-white/80 mt-0.5">
+                      kcal
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="font-syne font-bold text-lg tabular-nums text-gold-soft">
-                    {meal.calories != null ? meal.calories : '—'}
+
+                <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+                  <p className="font-syne font-bold text-2xl sm:text-[1.65rem] text-white leading-[1.1] drop-shadow-lg line-clamp-2 min-w-0 flex-1">
+                    {meal.name || 'Untitled'}
                   </p>
-                  <p className="font-mono text-[10px] uppercase text-ink-faint">kcal</p>
-                  <div className="mt-2 flex justify-end">
+                  <div className="shrink-0 pb-0.5">
                     <StatusPill status={status} />
                   </div>
                 </div>

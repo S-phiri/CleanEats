@@ -28,7 +28,7 @@ export async function GET(request) {
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('name, profile_data')
+      .select('profile_data')
       .eq('id', user.id)
       .maybeSingle()
 
@@ -42,8 +42,7 @@ export async function GET(request) {
         ? profile.profile_data.goal
         : null
 
-    const isProfileComplete = !!goal || !!profile?.name
-    const destination = `${origin}${isProfileComplete ? '/dashboard' : '/profile'}`
+    const destination = `${origin}${goal ? '/dashboard' : '/profile'}`
     return redirect(destination)
   } catch (error) {
     console.error('Callback error:', error)

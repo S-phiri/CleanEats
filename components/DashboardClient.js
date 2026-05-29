@@ -11,6 +11,8 @@ import PerformanceMetrics from './dashboard/PerformanceMetrics'
 import MarketPriceIndex from './dashboard/MarketPriceIndex'
 import DashboardToday from './dashboard/DashboardToday'
 import PlanViewClient from './PlanViewClient'
+import MobileBottomNav from './layout/MobileBottomNav'
+import MobileBottomNav from './layout/MobileBottomNav'
 import { createClient } from '../lib/supabase/client'
 import { parseAssistantJson } from '../lib/parse-assistant-json'
 import { getCreditsExhaustedPayload } from '../lib/generate-api-errors'
@@ -177,6 +179,7 @@ export default function DashboardClient({
   const [logCreditsExhausted, setLogCreditsExhausted] = useState(false)
   const [toast, setToast] = useState(null)
   const [coachNote, setCoachNote] = useState(null)
+  const [loggedMealSlots, setLoggedMealSlots] = useState(() => new Set())
   const [navTierHost, setNavTierHost] = useState(null)
   const [creditsRemaining, setCreditsRemaining] = useState(initialCreditsRemaining)
 
@@ -406,10 +409,18 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
       }
 
       const supabase = createClient()
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession()
+      if (sessionErr || !sessionData?.session?.user?.id) {
+        console.error('meal_logs insert: no auth session', sessionErr)
+        setLogError('Your session expired. Sign in again and retry logging.')
+        return
+      }
+
+      const mealTypeForLog = mealSlotId(loggedSlotMeal.type) || logSelectedMeal
       const logRow = {
-        user_id: user.id,
+        user_id: sessionData.session.user.id,
         ...sanitiseMealInput({
-          meal_type: loggedSlotMeal.type || logSelectedMeal,
+          meal_type: mealTypeForLog,
           meal_name: loggedSlotMeal.name || selectedMealLabel,
           calories: loggedSlotMeal.calories ?? null,
           protein_g: loggedSlotMeal.protein ?? null,
@@ -423,10 +434,18 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
       const { error: logErr } = await supabase.from('meal_logs').insert(logRow)
 
       if (logErr) {
-        console.error('meal_logs insert:', logErr)
+        console.error('meal_logs insert failed:', {
+          code: logErr.code,
+          message: logErr.message,
+          details: logErr.details,
+          hint: logErr.hint,
+          row: logRow,
+        })
         setLogError('Plan updated, but saving your log failed. Try again later.')
         return
       }
+
+      setLoggedMealSlots((prev) => new Set([...prev, mealTypeForLog]))
 
       closeLogModal()
       setCoachNote(note)
@@ -440,7 +459,8 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
   }
 
   return (
-    <main className="page-layer max-w-[1280px] mx-auto px-6 sm:px-10 pb-16 pt-8">
+    <>
+    <main className="page-layer max-w-[1280px] mx-auto px-6 sm:px-10 pb-24 md:pb-16 pt-8">
       {navTierHost &&
         createPortal(
           <NavTierCredits tier={tier} creditsRemaining={creditsRemaining} />,
@@ -594,7 +614,7 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
             <div className="space-y-5">
               {liveTodayMeals.length > 0 ? (
                 <>
-                  <DashboardToday meals={liveTodayMeals} />
+                  <DashboardToday meals={liveTodayMeals} loggedSlots={loggedMealSlots} />
                   {coachNote && (
                     <p className="text-sm leading-relaxed" style={{ color: '#C9A84C' }}>
                       {coachNote}
@@ -716,5 +736,10 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
         </div>
       )}
     </main>
+    <MobileBottomNav
+      activeTab={mainTab === 'performance' ? 'today' : mainTab}
+      onTabChange={(id) => setMainTab(id)}
+    />
+    </>
   )
 }

@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "verify:env": "node scripts/verify-supabase-env.js",
+    "seed:meals": "node scripts/seed-meals-library.js",
     "postinstall": "node scripts/fix-next-parseurl.js"
   },
   "dependencies": {

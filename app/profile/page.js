@@ -43,6 +43,11 @@ import { buildMealPrepPromptBlock, buildPrepGuideInstructions } from '../../lib/
 import { parseAssistantJson } from '../../lib/parse-assistant-json'
 import { getCreditsExhaustedPayload } from '../../lib/generate-api-errors'
 import CreditsExhaustedAlert from '../../components/CreditsExhaustedAlert'
+import {
+  buildGapFillPrompt,
+  mergeGapMeals,
+  mealsFromPlanJson,
+} from '../../lib/meal-cache'
 
 function parseCsv(str) {
   return (str || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -336,6 +341,19 @@ ${buildPrepGuideInstructions(form)}
 Return ONLY valid JSON:
 {"weeklyBudgetEstimate":"string","shoppingList":{"Produce":[{"item":"name","qty":"amount","price":"${cd.sym}X"}],"Protein Sources":[],"Dairy & Eggs":[],"Grains & Legumes":[],"Pantry & Oils":[],"Frozen":[],"Snacks & Extras":[]},"prepGuide":[{"title":"title","icon":"emoji","steps":["step"]}]}`
 
+    async function upsertMealsToLibrary(meals) {
+      if (!meals?.length) return
+      try {
+        await fetch('/api/plan/cache-library', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ meals, profileData, tdee }),
+        })
+      } catch (e) {
+        console.warn('Cache library upsert skipped:', e)
+      }
+    }
+
     try {
       // Save profile to Supabase first
       await supabase.from('profiles').upsert({
@@ -345,24 +363,88 @@ Return ONLY valid JSON:
         updated_at: new Date().toISOString(),
       })
 
-      // Call 1 \u2014 meal plan
-      console.log('PROMPT TOKENS ESTIMATE:', Math.round(prompt.length / 4))
-      const r1 = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], max_tokens: 8000 }),
-      })
-      const d1 = await r1.json()
-      const exhausted1 = getCreditsExhaustedPayload(r1, d1)
-      if (exhausted1) {
-        setCreditsExhausted(true)
-        setError(exhausted1.message)
-        setGenerating(false)
-        return
+      let plan = null
+      let assembly = null
+
+      try {
+        const ar = await fetch('/api/plan/assemble', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileData, tdee }),
+        })
+        if (ar.ok) assembly = await ar.json()
+      } catch (e) {
+        console.warn('Cache assembly unavailable:', e)
       }
-      if (d1.error) throw new Error(d1.message || d1.error)
-      const plan = parseAssistantJson(d1)
-      console.log('RESPONSE TOKENS ESTIMATE:', Math.round(JSON.stringify(plan).length / 4))
+
+      if (assembly?.fullyCached) {
+        plan = {
+          ...assembly.planMeta,
+          ...assembly.context.daily,
+          days: 5,
+          mealPlan: assembly.mealPlan,
+        }
+        console.log('CACHE HIT: full plan from library', assembly.stats)
+      } else if (assembly && !assembly.useFullPlan && assembly.misses?.length > 0) {
+        const gapPrompt = buildGapFillPrompt(assembly.misses, profileData, assembly.context, cd, {
+          style: buildStyleInstruction(culinaryStyle, cd),
+          staples: buildStaplesRetailBlock(culinaryStyle, cd),
+          variety: buildVarietyCuisineBlock(form.cuisines),
+        })
+        console.log('CACHE GAP FILL:', assembly.stats)
+        const rGap = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: gapPrompt }],
+            max_tokens: 3000,
+            promptType: 'cache_fill',
+            cacheStats: assembly.stats,
+          }),
+        })
+        const dGap = await rGap.json()
+        const exhaustedGap = getCreditsExhaustedPayload(rGap, dGap)
+        if (exhaustedGap) {
+          setCreditsExhausted(true)
+          setError(exhaustedGap.message)
+          setGenerating(false)
+          return
+        }
+        if (dGap.error) throw new Error(dGap.message || dGap.error)
+        const gapPayload = parseAssistantJson(dGap)
+        const gapMeals = gapPayload.meals || []
+        plan = {
+          ...assembly.planMeta,
+          ...assembly.context.daily,
+          days: 5,
+          mealPlan: mergeGapMeals(assembly, gapMeals, assembly.misses),
+        }
+        await upsertMealsToLibrary(gapMeals)
+      } else {
+        console.log('PROMPT TOKENS ESTIMATE:', Math.round(prompt.length / 4))
+        const r1 = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 8000,
+            promptType: 'full_plan',
+            cacheStats: assembly?.stats,
+          }),
+        })
+        const d1 = await r1.json()
+        const exhausted1 = getCreditsExhaustedPayload(r1, d1)
+        if (exhausted1) {
+          setCreditsExhausted(true)
+          setError(exhausted1.message)
+          setGenerating(false)
+          return
+        }
+        if (d1.error) throw new Error(d1.message || d1.error)
+        plan = parseAssistantJson(d1)
+        console.log('RESPONSE TOKENS ESTIMATE:', Math.round(JSON.stringify(plan).length / 4))
+        await upsertMealsToLibrary(mealsFromPlanJson(plan))
+      }
 
       // Call 2 \u2014 shopping + prep
       const mealSummary = plan.mealPlan.map(d =>

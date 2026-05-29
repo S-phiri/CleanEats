@@ -27,6 +27,13 @@ export default async function Home() {
   const planJson = latestPlan?.plan_json || latestPlan
   const hasPlan = !!planJson
 
+  const dateLabel = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  })
+
   return (
     <div className="page-layer min-h-screen">
       <Nav user={user} variant="landing" />
@@ -34,6 +41,7 @@ export default async function Home() {
         <Hero
           ctaHref={user ? '/dashboard' : '/signup'}
           ctaLabel={user ? 'Go to dashboard' : 'Start your plan'}
+          dateLabel={dateLabel}
         />
         <div className="max-w-[1280px] mx-auto px-6 sm:px-10">
           <SignUpSection user={user} />

@@ -5,22 +5,23 @@
 -- ============================================
 
 -- ---------------------------------------------------------------------------
--- meal_logs — user meal history, deviations, and swap audit trail
+-- meal_logs — user meal history (what was eaten + coach notes)
 -- ---------------------------------------------------------------------------
 create table if not exists public.meal_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
-  meal_plan_id uuid references public.plans (id) on delete set null,
+  created_at timestamptz not null default now(),
+  meal_type text,
   meal_name text not null,
-  logged_at timestamptz not null default now(),
-  deviation_note text,
-  swapped_from text,
-  swapped_to text,
-  created_at timestamptz not null default now()
+  calories integer,
+  protein_g numeric,
+  carbs_g numeric,
+  fat_g numeric,
+  notes text
 );
 
 comment on table public.meal_logs is
-  'Per-user meal events: what was eaten, coach deviation notes from Log a Deviation, and optional swap before/after names.';
+  'Per-user meal log entries: what was eaten, macros, and coach deviation notes.';
 
 create index if not exists meal_logs_user_id_idx
   on public.meal_logs (user_id);

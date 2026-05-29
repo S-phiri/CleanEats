@@ -11,7 +11,10 @@ export default function Footer() {
             <span className="text-ink">CLEAN</span>
             <span className="text-green">EATS</span>
           </Link>
-          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-mute mt-3">
+          <p
+            className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-mute mt-3"
+            suppressHydrationWarning
+          >
             © {year} CleanEats
           </p>
         </div>

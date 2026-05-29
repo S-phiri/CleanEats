@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Clock, Check, ArrowLeftRight } from 'lucide-react'
+import { Clock, Check, ArrowLeftRight, ChevronDown, ChevronUp, ShoppingBag } from 'lucide-react'
 import Glass from '../primitives/Glass'
 import Button from '../primitives/Button'
+import { aggregateIngredients, cookStepsForMeal, buildDayMarketList } from '../../lib/meal-recipe'
 
 function coachNoteFor(meal) {
   const note = meal?.coachNote ?? meal?.coach_note
@@ -12,9 +13,9 @@ function coachNoteFor(meal) {
 
 export default function RecipePanel({
   meal,
+  dayMeals = [],
   panelTab,
   onPanelTab,
-  shoppingCount = 0,
   swapPicker = null,
   onIngredientRowTap,
   onSelectLocalSwap,
@@ -29,17 +30,36 @@ export default function RecipePanel({
   swapMealLoading = false,
 }) {
   const [completed, setCompleted] = useState(false)
+  const [marketOpen, setMarketOpen] = useState(false)
   const coachNote = useMemo(() => (meal ? coachNoteFor(meal) : ''), [meal])
 
-  const tabs = useMemo(() => [
-    { id: 'ingredients', label: 'Ingredients' },
-    { id: 'shopping', label: `Shopping (${shoppingCount})` },
-    ...(coachNote ? [{ id: 'coach', label: 'Coach note' }] : []),
-  ], [coachNote, shoppingCount])
+  const aggregatedPortions = useMemo(
+    () => (meal ? aggregateIngredients(meal.portions || []) : []),
+    [meal]
+  )
+
+  const cookSteps = useMemo(() => (meal ? cookStepsForMeal(meal) : []), [meal])
+
+  const dayMarketGroups = useMemo(() => buildDayMarketList(dayMeals), [dayMeals])
+
+  const tabs = useMemo(
+    () => [
+      { id: 'ingredients', label: 'Ingredients' },
+      { id: 'cook', label: 'How to Cook' },
+      ...(coachNote ? [{ id: 'coach', label: 'Coach note' }] : []),
+    ],
+    [coachNote]
+  )
 
   useEffect(() => {
     if (panelTab === 'coach' && !coachNote) onPanelTab('ingredients')
+    if (panelTab === 'shopping') onPanelTab('ingredients')
   }, [panelTab, coachNote, onPanelTab])
+
+  useEffect(() => {
+    setCompleted(false)
+    setMarketOpen(false)
+  }, [meal?.name])
 
   if (!meal) {
     return (
@@ -96,31 +116,45 @@ export default function RecipePanel({
 
         {panelTab === 'ingredients' && (
           <ul className="space-y-0">
-            {(meal.portions || []).map((p, pi) => {
-              const swapping = swappingPortionIndex === pi
-              const pickerOpen = swapPicker?.portionIndex === pi
+            {aggregatedPortions.length === 0 && (
+              <li className="text-sm text-ink-mute py-2">No ingredients listed for this meal.</li>
+            )}
+            {aggregatedPortions.map((p, pi) => {
+              const originalIndex = (meal.portions || []).findIndex(
+                (orig) =>
+                  String(orig.ingredient).trim().toLowerCase() ===
+                  String(p.ingredient).trim().toLowerCase()
+              )
+              const rowIndex = originalIndex >= 0 ? originalIndex : pi
+              const swapping = swappingPortionIndex === rowIndex
+              const pickerOpen = swapPicker?.portionIndex === rowIndex
               const busy = swappingPortionIndex !== null
               return (
-              <li
-                key={pi}
-                role="button"
-                tabIndex={0}
-                onClick={() => !busy && onIngredientRowTap?.(pi)}
-                onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !busy) onIngredientRowTap?.(pi) }}
-                className={`flex gap-3 items-center py-3 border-b border-dashed border-[var(--line)] text-sm cursor-pointer transition-colors ${
-                  swapping || pickerOpen ? 'bg-green/15 border-green/30' : 'hover:bg-base-3/40'
-                } ${busy && !swapping ? 'opacity-50 pointer-events-none' : ''}`}
-              >
-                <span className="font-mono text-[11px] text-ink-faint w-16 shrink-0 tabular-nums">
-                  {p.grams != null ? `${p.grams}g` : '—'}
-                </span>
-                <span className="flex-1 text-ink">{p.ingredient}</span>
-                {p.measure && <span className="font-mono text-[10px] text-gold tabular-nums shrink-0">{p.measure}</span>}
-                <span className={`shrink-0 ${swapping ? 'text-green-soft' : 'text-ink-mute'}`} aria-hidden>
-                  <ArrowLeftRight size={16} strokeWidth={2} className={swapping ? 'animate-pulse' : ''} />
-                </span>
-              </li>
-            )})}
+                <li
+                  key={`${p.ingredient}-${pi}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => !busy && onIngredientRowTap?.(rowIndex)}
+                  onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !busy) onIngredientRowTap?.(rowIndex)
+                  }}
+                  className={`flex gap-3 items-center py-3 border-b border-dashed border-[var(--line)] text-sm cursor-pointer transition-colors ${
+                    swapping || pickerOpen ? 'bg-green/15 border-green/30' : 'hover:bg-base-3/40'
+                  } ${busy && !swapping ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  <span className="font-mono text-[11px] text-ink-faint w-16 shrink-0 tabular-nums">
+                    {p.grams != null ? `${Math.round(p.grams)}g` : '—'}
+                  </span>
+                  <span className="flex-1 text-ink">{p.ingredient}</span>
+                  {p.measure && (
+                    <span className="font-mono text-[10px] text-gold tabular-nums shrink-0">{p.measure}</span>
+                  )}
+                  <span className={`shrink-0 ${swapping ? 'text-green-soft' : 'text-ink-mute'}`} aria-hidden>
+                    <ArrowLeftRight size={16} strokeWidth={2} className={swapping ? 'animate-pulse' : ''} />
+                  </span>
+                </li>
+              )
+            })}
             {swapPicker && (
               <li className="py-4 pt-5 list-none border-t border-[#C9A84C]/10 border-b border-[var(--line)] bg-[#0C0C0A]">
                 <p className="font-syne text-[10px] uppercase tracking-[0.16em] text-[#C9A84C] mb-3">
@@ -162,7 +196,7 @@ export default function RecipePanel({
                     <input
                       type="text"
                       value={customSwapInput}
-                      onChange={e => onCustomSwapInputChange?.(e.target.value)}
+                      onChange={(e) => onCustomSwapInputChange?.(e.target.value)}
                       placeholder="Type an ingredient you have"
                       className="w-full mt-2 mb-2 px-4 py-3 rounded-lg border border-[#C9A84C] bg-[#1A1A18] text-sm text-white outline-none transition-shadow focus:ring-2 focus:ring-[#C9A84C] focus:ring-offset-0 focus:ring-offset-[#0C0C0A]"
                     />
@@ -197,15 +231,64 @@ export default function RecipePanel({
           </ul>
         )}
 
+        {panelTab === 'cook' && (
+          <ol className="space-y-4 list-none counter-reset">
+            {cookSteps.map((step, si) => (
+              <li key={si} className="flex gap-3 text-sm leading-relaxed">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green/15 border border-green/40 font-syne font-bold text-xs text-green-soft">
+                  {si + 1}
+                </span>
+                <span className="text-ink pt-0.5">{step}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+
         {panelTab === 'coach' && coachNote && (
           <div className="glass p-4 rounded-[var(--r-md)] border border-[var(--line)]">
             <p className="text-sm text-ink-mute leading-relaxed">{coachNote}</p>
           </div>
         )}
 
-        {panelTab === 'shopping' && (
-          <p className="text-sm text-ink-mute">Open the Shopping List tab for pantry mode and regeneration.</p>
-        )}
+        <div className="mt-5">
+          <button
+            type="button"
+            onClick={() => setMarketOpen((o) => !o)}
+            className="w-full flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl border border-[var(--line)] bg-base-3 text-sm font-medium text-ink hover:border-green-dim transition-colors"
+          >
+            <ShoppingBag size={18} strokeWidth={2} className="text-gold-soft shrink-0" />
+            Market List
+            {marketOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
+          {marketOpen && (
+            <div className="mt-3 rounded-xl border border-[var(--line)] bg-base-3/50 p-4 space-y-4">
+              <p className="text-xs text-ink-mute leading-relaxed">
+                What to buy for today&apos;s meals — grouped for a quick shop.
+              </p>
+              {dayMarketGroups.length === 0 ? (
+                <p className="text-sm text-ink-mute">No ingredients for this day.</p>
+              ) : (
+                dayMarketGroups.map((group) => (
+                  <div key={group.label}>
+                    <p className="font-mono text-[10px] uppercase tracking-wider text-gold mb-2">
+                      {group.label}
+                    </p>
+                    <ul className="space-y-1.5">
+                      {group.items.map((item, ii) => (
+                        <li key={ii} className="flex justify-between gap-2 text-sm text-ink">
+                          <span>{item.ingredient}</span>
+                          <span className="font-mono text-[11px] text-ink-faint tabular-nums shrink-0">
+                            {item.grams != null ? `${Math.round(item.grams)}g` : ''}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         <hr className="border-[var(--line)] my-5" />
         <div className="flex flex-wrap gap-3">

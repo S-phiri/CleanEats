@@ -3,24 +3,20 @@
 import { Zap, CalendarDays } from 'lucide-react'
 import Button from '../primitives/Button'
 
-function DateEyebrow() {
-  const line = new Date().toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  })
+function DateEyebrow({ dateLabel }) {
+  if (!dateLabel) return null
   return (
     <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-mute px-3 py-1.5 rounded-full border border-[var(--line)] bg-green/10">
       <span className="h-2 w-2 rounded-full bg-green" />
-      {line}
+      {dateLabel}
     </span>
   )
 }
 
-export default function Hero({ ctaHref, ctaLabel }) {
+export default function Hero({ ctaHref, ctaLabel, dateLabel }) {
   return (
     <section className="mb-16 w-full max-w-[900px] mx-auto py-12 px-6 sm:px-10 lg:py-[72px] lg:px-16">
-      <DateEyebrow />
+      <DateEyebrow dateLabel={dateLabel} />
       <h1 className="font-syne font-extrabold uppercase mt-6 leading-[0.92] tracking-[-0.02em] text-[clamp(2rem,4.2vw,4.5rem)] break-words">
         <span className="block text-[#C9A84C]">Eat well.</span>
         <span className="block text-[#F0EDE4] mt-1">Train hard.</span>

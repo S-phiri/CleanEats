@@ -7,6 +7,7 @@ import {
   defaultMockProfileId,
 } from '../../../lib/mock-plan-fixtures'
 import { FREE_CREDIT_CAP } from '../../../lib/credits'
+import { logCacheEvent } from '../../../lib/log-api-cache'
 const STUCK_GENERATION_LOCK_MS = 3 * 60 * 1000
 
 function isMockGeneration() {
@@ -30,6 +31,10 @@ function isLogDeviationPrompt(userContent) {
   return typeof userContent === 'string' && userContent.includes('LOG DEVIATION')
 }
 
+function isCacheFillPrompt(userContent) {
+  return typeof userContent === 'string' && userContent.includes('CACHE GAP FILL')
+}
+
 const LOG_DEVIATION_MEAL_ADJUSTMENT = `When adjusting remaining meals, only modify portion sizes or swap to ingredients already listed in the user's existing meal plan for today. Do not introduce new ingredients the user would need to purchase. Work within what is already planned.`
 
 function messagesForAnthropic(messages, userContent) {
@@ -50,6 +55,7 @@ function resolvePromptType(userContent, body) {
   if (isLogDeviationPrompt(userContent)) return 'log_deviation'
   if (isMealSwapPrompt(userContent)) return 'swap_meal'
   if (isIngredientSwapPrompt(userContent)) return 'swap_ingredient'
+  if (isCacheFillPrompt(userContent)) return 'cache_fill'
   return 'full_plan'
 }
 
@@ -65,6 +71,8 @@ function resolveCreditCost(promptType) {
       return 1
     case 'shopping_prep':
       return 0
+    case 'cache_fill':
+      return 1
     default:
       return 1
   }
@@ -122,10 +130,37 @@ async function chargeCreditsAtomically(supabase, userId, creditCost) {
 
   if (error) {
     console.error('increment_credits_if_under_cap error:', error)
-    return { ok: false, rpcError: true }
+    return { ok: false, rpcError: true, rpcMessage: error.message }
   }
 
   return { ok: !!allowed }
+}
+
+async function ensureProfileRow(supabase, user) {
+  const displayName =
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.email?.split('@')[0] ||
+    'User'
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert({
+      id: user.id,
+      name: displayName,
+      credits_used: 0,
+      last_reset_date: new Date().toISOString().slice(0, 10),
+      is_generating: false,
+    })
+    .select('tier, generations_this_month, is_generating, credits_used, last_reset_date, updated_at')
+    .single()
+
+  if (error) {
+    console.error('Profile ensure error:', error)
+    return { profile: null, error }
+  }
+
+  return { profile: data, error: null }
 }
 
 function mockAnthropicPayload(planPart, shoppingPart, isSecondCall) {
@@ -168,11 +203,38 @@ export async function POST(request) {
   const body = await request.json()
   const { messages, max_tokens, model, savePlan } = body
 
-  let { data: profile } = await supabase
+  let { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('tier, generations_this_month, is_generating, credits_used, last_reset_date, updated_at')
     .eq('id', user.id)
     .single()
+
+  if (profileError) {
+    console.error('Profile fetch error:', profileError)
+    const isMissing = profileError.code === 'PGRST116'
+    if (isMissing) {
+      const ensured = await ensureProfileRow(supabase, user)
+      if (ensured.error || !ensured.profile) {
+        return NextResponse.json(
+          {
+            error: 'PROFILE_UNAVAILABLE',
+            message: 'Could not load your profile. Try again or contact support.',
+          },
+          { status: 503 }
+        )
+      }
+      profile = ensured.profile
+    } else {
+      return NextResponse.json(
+        {
+          error: 'PROFILE_UNAVAILABLE',
+          message: 'Could not load your profile. Try again later.',
+          ...(process.env.NODE_ENV !== 'production' && { detail: profileError.message }),
+        },
+        { status: 503 }
+      )
+    }
+  }
 
   const tier = profile?.tier || 'free'
   const usedThisMonth = profile?.generations_this_month || 0
@@ -242,7 +304,13 @@ export async function POST(request) {
     const charge = await chargeCreditsAtomically(supabase, user.id, creditCost)
     if (charge.rpcError) {
       return jsonWithCredits(
-        { error: 'Failed to verify credits' },
+        {
+          error: 'CREDITS_RPC_UNAVAILABLE',
+          message: 'Failed to verify credits. The server may need a database update — try again later.',
+          ...(process.env.NODE_ENV !== 'production' && charge.rpcMessage
+            ? { detail: charge.rpcMessage }
+            : {}),
+        },
         tier,
         creditsUsed,
         500
@@ -351,6 +419,19 @@ export async function POST(request) {
         response.status
       )
     }
+
+    const cacheStats = body?.cacheStats
+    await logCacheEvent(supabase, user.id, {
+      endpoint: '/api/generate',
+      promptType,
+      creditsUsed: creditCost,
+      cacheHits: cacheStats?.hits ?? null,
+      cacheMisses: cacheStats?.misses ?? null,
+      model: data.model || model || 'claude-sonnet-4-20250514',
+      durationMs: null,
+      inputTokens: data.usage?.input_tokens,
+      outputTokens: data.usage?.output_tokens,
+    })
 
     return jsonWithCredits(data, tier, creditsUsed)
   } catch (err) {

@@ -95,8 +95,10 @@ Copy from [VERCEL_ENV_CHECKLIST.md](./VERCEL_ENV_CHECKLIST.md). Set in **Vercel 
 ## 6. Post-deploy (manual)
 
 - [ ] Supabase **Authentication → URL configuration**: Site URL + redirect URLs include `https://<your-app>.vercel.app` and `https://<your-app>.vercel.app/auth/callback`
+- [ ] Supabase **SQL Editor**: run [`supabase-profiles-credits-migration.sql`](supabase-profiles-credits-migration.sql) if not already applied (existing projects)
+- [ ] Supabase **SQL Editor**: run [`supabase-increment-credits-rpc.sql`](supabase-increment-credits-rpc.sql) (required for free-tier plan generation)
 - [ ] Run `npm run verify:env` locally after copying production Supabase keys into `.env.local`
-- [ ] Smoke test: signup → profile → generate plan → dashboard
+- [ ] Smoke test: signup → profile → generate plan → dashboard (first generate should not return **Failed to verify credits**)
 - [ ] Confirm `/api/generate` completes within your Vercel plan timeout (long Claude calls may need Pro plan or streaming later)
 
 ---

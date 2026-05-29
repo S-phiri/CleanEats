@@ -25,6 +25,12 @@ Required for auth, profiles, plans, and middleware session refresh.
 
 Verify URL and anon key match the same project: `npm run verify:env`
 
+**Database SQL (run once in Supabase SQL Editor):**
+
+- [ ] `supabase-schema.sql` — base tables, RLS, signup trigger
+- [ ] `supabase-profiles-credits-migration.sql` — `credits_used`, `last_reset_date`, `is_generating` (skip if schema already includes these)
+- [ ] `supabase-increment-credits-rpc.sql` — required for `/api/generate` credit charging
+
 ---
 
 ## Anthropic

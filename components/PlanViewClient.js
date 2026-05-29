@@ -2,43 +2,17 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import Nav from '../Nav'
-import { Share2, ShoppingCart, ClipboardList } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import { buildPlanViewTokens } from '../lib/theme-tokens'
-import Button from './primitives/Button'
-import Glass from './primitives/Glass'
 import DayChips from './plan/DayChips'
 import SlotList from './plan/SlotList'
 import RecipePanel from './plan/RecipePanel'
-import { createClient } from '../lib/supabase/client'
-import { COUNTRIES, calcTDEE } from '../lib/utils'
-import {
-  buildStyleInstruction,
-  buildStaplesRetailBlock,
-  buildVarietyCuisineBlock,
-  buildMaizePortionHint,
-  buildShoppingPromptExtra,
-} from '../lib/prompt-cuisine'
-import { buildMealPrepPromptBlock, buildPrepGuideInstructions } from '../lib/meal-prep-prompt'
+import { COUNTRIES } from '../lib/utils'
 import { parseAssistantJson } from '../lib/parse-assistant-json'
 import { getLocalSwaps } from '../lib/ingredient-swaps'
 import { getCreditsExhaustedPayload } from '../lib/generate-api-errors'
 import CreditsExhaustedAlert from './CreditsExhaustedAlert'
-
-const SHOPPING_CATEGORIES = [
-  'Produce',
-  'Protein Sources',
-  'Dairy & Eggs',
-  'Grains & Legumes',
-  'Pantry & Oils',
-  'Frozen',
-  'Snacks & Extras',
-]
-
-function itemKey(category, index) {
-  return `${category}::${index}`
-}
 
 function cityForCountry(countryCode) {
   const code = (countryCode || '').toUpperCase()
@@ -53,97 +27,6 @@ function normaliseForm(planData) {
   return planData.profile && typeof planData.profile === 'object' ? planData.profile : {}
 }
 
-function buildRegenerateMealPrompt(planData, available, unavailable) {
-  const form = normaliseForm(planData)
-  const cd = COUNTRIES[form.countryCode] || COUNTRIES.other
-  const wkg = form.units === 'metric'
-    ? form.weightKg
-    : form.weightLbs ? (parseFloat(form.weightLbs) * 0.453592).toFixed(1) : ''
-  const hcm = form.units === 'metric'
-    ? form.heightCm
-    : (form.heightFt || form.heightIn)
-      ? ((parseFloat(form.heightFt || 0) * 30.48) + (parseFloat(form.heightIn || 0) * 2.54)).toFixed(0)
-      : ''
-  const tdeeVal = planData.tdee ?? calcTDEE({
-    weightKg: wkg, heightCm: hcm, age: form.age, sex: form.sex,
-    activity: form.activity, job: form.job, dailySteps: form.dailySteps,
-  })
-
-  const availBlock = available.length ? available.map(x => `- ${x}`).join('\n') : '- (none marked — assume standard shopping)'
-  const unavailBlock = unavailable.length ? unavailable.map(x => `- ${x}`).join('\n') : '- (none)'
-  const culinaryStyle = form.culinaryStyle || 'mixed'
-  const countryCode = form.countryCode || ''
-  const maizeLine = buildMaizePortionHint(culinaryStyle, countryCode)
-
-  return `You are an expert sports nutritionist and precision meal planner.
-
-REGENERATION — Rebuild a completely NEW 5-day meal plan. The user indicated what they already have at home vs what they still need.
-
-ALREADY HAVE AT HOME (build meals around these first):
-${availBlock}
-
-NOT AVAILABLE / STILL NEEDED (minimise reliance; offer swaps):
-${unavailBlock}
-
-MACRO TARGETS (match closely):
-- Maintenance TDEE: ${tdeeVal != null ? `${tdeeVal} kcal/day` : 'derive from profile'}
-- Target calories: ${planData.targetCalories ?? '—'}, Protein: ${planData.targetProtein ?? '—'}g, Carbs: ${planData.targetCarbs ?? '—'}g, Fat: ${planData.targetFat ?? '—'}g
-
-PROFILE (JSON): ${JSON.stringify({
-    name: form.name, goal: form.goal, activity: form.activity, diet: form.diet,
-    fasting: form.fasting, allergies: form.allergies, meals: form.meals,
-    budget: form.budget, cooktime: form.cooktime, people: form.people,
-    excludeIngredients: form.excludeIngredients, culinaryStyle: form.culinaryStyle,
-    cuisines: form.cuisines, lovedMeals: form.lovedMeals, notes: form.notes,
-    country: cd.name, currency: cd.currency,
-  })}
-
-CULINARY STYLE: ${buildStyleInstruction(culinaryStyle, cd)}
-${buildStaplesRetailBlock(culinaryStyle, cd)}
-
-${buildVarietyCuisineBlock(form.cuisines)}
-${buildMealPrepPromptBlock(form)}
-
-PORTIONS — each ingredient: grams + measure + visual. Max 5 portions per meal. Exactly 5 days in mealPlan.
-${maizeLine ? maizeLine + '\n' : ''}
-
-Return ONLY valid JSON, no markdown:
-{
-  "planTitle":"string","planSubtitle":"string",
-  "tdee":${tdeeVal != null ? tdeeVal : 'null'},"targetCalories":number,"targetProtein":number,"targetCarbs":number,"targetFat":number,
-  "days":5,"mealFrequencyRecommendation":"string or empty",
-  "planSummary":"string",
-  "wellnessSupport":{"intro":"string","foodIdeas":[],"supplements":[{"name":"string","note":"string","caution":"string"}],"hydratingDrinks":[{"name":"string","note":"string"}]},
-  "mealPlan":[{"day":1,"dayName":"Monday","totalCalories":number,"meals":[{"type":"Breakfast","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fat":number,"portions":[{"ingredient":"string","grams":150,"measure":"1 cup","visual":"fist-sized"}]}]}]
-}`
-}
-
-function buildShoppingPrepPrompt(mealPlan, planData) {
-  const form = normaliseForm(planData)
-  const cd = COUNTRIES[form.countryCode] || COUNTRIES.other
-  const br = form.budget === 'budget' ? cd.budgetL : form.budget === 'mid' ? cd.budgetM : cd.budgetH
-  const culinaryStyle = form.culinaryStyle || 'mixed'
-  const shoppingExtra = buildShoppingPromptExtra(culinaryStyle, cd)
-  const mealSummary = (mealPlan || []).map(d =>
-    (d.meals || []).map(m =>
-      `${m.name}: ${(m.portions || []).map(p => `${p.grams}g ${p.ingredient}`).join(', ')}`
-    ).join(' | ')
-  ).join('\n')
-
-  return `Generate shopping list with local ${cd.currency} prices and batch prep guide for a 5-day meal plan in ${cd.name}.
-${shoppingExtra}
-People: ${form.people || '1'}, Budget: ${form.budget || 'mid'} (~${br}), Never include: ${form.excludeIngredients || 'none'}
-Local stores: ${cd.modern}
-
-Meals:
-${mealSummary}
-
-${buildPrepGuideInstructions(form)}
-
-Return ONLY valid JSON:
-{"weeklyBudgetEstimate":"string","shoppingList":{"Produce":[{"item":"name","qty":"amount","price":"${cd.sym}X"}],"Protein Sources":[],"Dairy & Eggs":[],"Grains & Legumes":[],"Pantry & Oils":[],"Frozen":[],"Snacks & Extras":[]},"prepGuide":[{"title":"title","icon":"emoji","steps":["step"]}]}`
-}
-
 export default function PlanViewClient({
   user,
   tier,
@@ -153,15 +36,11 @@ export default function PlanViewClient({
   planData: initialPlanData,
   embedded = false,
 }) {
-  const router = useRouter()
-  const supabase = createClient()
   const [tab, setTab] = useState('meals')
   const [selectedDayIndex, setSelectedDayIndex] = useState(0)
   const [selectedMealIndex, setSelectedMealIndex] = useState(0)
   const [panelTab, setPanelTab] = useState('ingredients')
   const [openDays, setOpenDays] = useState(() => new Set([0]))
-  const [checked, setChecked] = useState({})
-  const [regenLoading, setRegenLoading] = useState(false)
   const [regenError, setRegenError] = useState('')
   const [regenCreditsExhausted, setRegenCreditsExhausted] = useState(false)
   const [livePlanData, setLivePlanData] = useState(initialPlanData || {})
@@ -188,19 +67,8 @@ export default function PlanViewClient({
   }, [planData.wellnessSupport])
 
   useEffect(() => {
-    const next = {}
-    SHOPPING_CATEGORIES.forEach(cat => {
-      const rows = planData.shoppingList?.[cat]
-      if (!Array.isArray(rows)) return
-      rows.forEach((_, idx) => {
-        next[itemKey(cat, idx)] = false
-      })
-    })
-    setChecked(next)
-  }, [initialPlanData])
-
-  useEffect(() => {
     if (tab === 'wellness' && !hasWellness) setTab('meals')
+    if (tab === 'shop') setTab('meals')
   }, [tab, hasWellness])
 
   const T = useMemo(() => buildPlanViewTokens(true), [])
@@ -212,11 +80,6 @@ export default function PlanViewClient({
       else n.add(i)
       return n
     })
-  }
-
-  function toggleCheck(cat, idx) {
-    const k = itemKey(cat, idx)
-    setChecked(c => ({ ...c, [k]: !c[k] }))
   }
 
   function applyPortionSwap(portionIndex, alt) {
@@ -400,87 +263,6 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
     return true
   }
 
-  async function regenerateWithPantry() {
-    setRegenError('')
-    setRegenCreditsExhausted(false)
-    const available = []
-    const unavailable = []
-    SHOPPING_CATEGORIES.forEach(cat => {
-      const rows = planData.shoppingList?.[cat]
-      if (!Array.isArray(rows)) return
-      rows.forEach((row, idx) => {
-        const label = row.item || row.name || 'Item'
-        const qty = row.qty || ''
-        const price = row.price || ''
-        const line = [label, qty, price].filter(Boolean).join(' · ')
-        if (checked[itemKey(cat, idx)]) available.push(line)
-        else unavailable.push(line)
-      })
-    })
-
-    setRegenLoading(true)
-    try {
-      const prompt1 = buildRegenerateMealPrompt(planData, available, unavailable)
-      const r1 = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompt1 }], max_tokens: 7000 }),
-      })
-      const d1 = await r1.json()
-      if (applyCreditsExhausted(r1, d1)) {
-        setRegenLoading(false)
-        return
-      }
-      if (d1.error) throw new Error(d1.message || d1.error)
-      const plan = parseAssistantJson(d1)
-      if (!Array.isArray(plan.mealPlan) || plan.mealPlan.length === 0) {
-        throw new Error('Model did not return a valid meal plan. Try again.')
-      }
-
-      const mealSummaryPrompt = buildShoppingPrepPrompt(plan.mealPlan, planData)
-      const r2 = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: mealSummaryPrompt }], max_tokens: 4000 }),
-      })
-      const d2 = await r2.json()
-      if (applyCreditsExhausted(r2, d2)) {
-        setRegenLoading(false)
-        return
-      }
-      if (d2.error) throw new Error(d2.message || d2.error)
-      const extra = parseAssistantJson(d2)
-
-      const profile = normaliseForm(planData)
-      const fullPlan = {
-        ...plan,
-        ...extra,
-        profile,
-        planSummary: plan.planSummary ?? planData.planSummary,
-        wellnessSupport: plan.wellnessSupport ?? planData.wellnessSupport,
-      }
-
-      const { data: { user: u } } = await supabase.auth.getUser()
-      if (!u) throw new Error('Not signed in')
-
-      const { data: savedPlan, error: insErr } = await supabase.from('plans').insert({
-        user_id: u.id,
-        plan_title: plan.planTitle,
-        plan_subtitle: plan.planSubtitle,
-        target_calories: plan.targetCalories,
-        plan_json: fullPlan,
-      }).select('id').single()
-
-      if (insErr) throw new Error(insErr.message)
-      router.push(`/plan/${savedPlan.id}`)
-    } catch (e) {
-      console.error(e)
-      setRegenError(e.message || 'Regeneration failed')
-    } finally {
-      setRegenLoading(false)
-    }
-  }
-
   const mealPlan = Array.isArray(planData.mealPlan) ? planData.mealPlan : []
   const prepGuide = Array.isArray(planData.prepGuide) ? planData.prepGuide : []
   const freq = (planData.mealFrequencyRecommendation || '').trim()
@@ -497,7 +279,6 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
 
   const tabs = [
     { id: 'meals', label: 'Meal Plan' },
-    { id: 'shop', label: 'Shopping List' },
     { id: 'prep', label: 'Prep Guide' },
     ...(hasWellness ? [{ id: 'wellness', label: 'Wellness' }] : []),
   ]
@@ -505,18 +286,6 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
   const selectedDay = mealPlan[selectedDayIndex]
   const selectedMeals = selectedDay?.meals || []
   const selectedMeal = selectedMeals[selectedMealIndex]
-  const shoppingCount = SHOPPING_CATEGORIES.reduce((n, cat) => {
-    const rows = planData.shoppingList?.[cat]
-    return n + (Array.isArray(rows) ? rows.length : 0)
-  }, 0)
-
-  async function handleShare() {
-    const url = typeof window !== 'undefined' ? window.location.href : ''
-    try {
-      if (navigator.share) await navigator.share({ title: planTitle || 'CleanEats Plan', url })
-      else if (navigator.clipboard) await navigator.clipboard.writeText(url)
-    } catch (_) {}
-  }
 
   const shellClass = embedded ? T.text : `min-h-screen page-layer ${T.bg} ${T.text}`
   const innerClass = embedded ? '' : 'max-w-5xl mx-auto px-6 sm:px-10 py-10 sm:py-14'
@@ -624,9 +393,9 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
                   <div className="min-w-0 overflow-hidden">
                     <RecipePanel
                       meal={selectedMeal}
+                      dayMeals={selectedMeals}
                       panelTab={panelTab}
                       onPanelTab={setPanelTab}
-                      shoppingCount={shoppingCount}
                       swapPicker={swapPicker}
                       onIngredientRowTap={openIngredientSwap}
                       onSelectLocalSwap={selectLocalSwap}
@@ -646,66 +415,6 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
             )}
           </div>
         )}
-        {tab === 'shop' && (
-          <div>
-            {planData.weeklyBudgetEstimate && (
-              <p className={`${T.soft} text-sm font-medium mb-4`}>Est. weekly budget: {planData.weeklyBudgetEstimate}</p>
-            )}
-            <p className={`${T.muted} text-sm mb-4 max-w-2xl leading-relaxed`}>
-              <strong className={T.text}>Pantry mode:</strong> tick what you already have at home. Unticked items are treated as still to buy.{' '}
-              <strong className={T.text}>Regenerate with what I have</strong> builds a new plan that leans on checked ingredients and updates the shopping list and prep guide.
-            </p>
-            <div className="grid sm:grid-cols-2 gap-4 mb-8">
-              {SHOPPING_CATEGORIES.map(cat => {
-                const rows = planData.shoppingList?.[cat]
-                const list = Array.isArray(rows) ? rows : []
-                return (
-                  <div key={cat} className={`rounded-2xl border ${T.border} ${T.surface} p-5`}>
-                    <p className={`text-[0.7rem] font-semibold uppercase tracking-[2px] ${T.muted} mb-4`}>{cat}</p>
-                    {list.length === 0 ? (
-                      <p className={`text-sm ${T.muted}`}>—</p>
-                    ) : (
-                      <ul className="space-y-3">
-                        {list.map((row, idx) => (
-                          <li key={idx} className="flex gap-3 items-start">
-                            <input
-                              type="checkbox"
-                              checked={!!checked[itemKey(cat, idx)]}
-                              onChange={() => toggleCheck(cat, idx)}
-                              className="mt-1 rounded border-border2 text-green focus:ring-green"
-                            />
-                            <div className="flex-1 min-w-0 text-sm">
-                              <span className="font-medium">{row.item || row.name}</span>
-                              {row.qty && <span className={`${T.muted} block text-xs mt-0.5`}>{row.qty}</span>}
-                              {row.price && (
-                                <span className={`${T.soft} block text-xs mt-0.5`}>{row.price}</span>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            <button
-              type="button"
-              disabled={regenLoading}
-              onClick={regenerateWithPantry}
-              className={`w-full sm:w-auto px-8 py-3 rounded-full text-sm font-semibold transition-all disabled:opacity-50 ${T.accentBtn}`}
-            >
-              {regenLoading ? 'Regenerating…' : 'Regenerate with what I have'}
-            </button>
-            <p className={`${T.muted} text-xs mt-3 max-w-xl`}>
-              Uses credits (full regen costs 3 on Free). Ticked lines are
-              ingredients you already have — the new plan favours them; the shopping list is rebuilt from the new meals (not just
-              hiding ticks).
-            </p>
-          </div>
-        )}
-
         {tab === 'prep' && (
           <div className="grid sm:grid-cols-2 gap-4">
             {prepGuide.length === 0 && <p className={T.muted}>No prep guide for this plan.</p>}

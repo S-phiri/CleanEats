@@ -4,17 +4,25 @@ import { useEffect, useState } from 'react'
 
 export default function Ring({ value = 0, size = 72, stroke = 6, color = 'var(--green)' }) {
   const target = Math.min(100, Math.max(0, value))
+  const [mounted, setMounted] = useState(false)
   const [animated, setAnimated] = useState(target)
   const radius = (size - stroke) / 2
   const circumference = 2 * Math.PI * radius
   const offset = circumference - (animated / 100) * circumference
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reduce) {
       setAnimated(target)
       return
     }
+
     let frame
     const start = performance.now()
     const duration = 1200
@@ -32,7 +40,7 @@ export default function Ring({ value = 0, size = 72, stroke = 6, color = 'var(--
       cancelAnimationFrame(frame)
       clearTimeout(safety)
     }
-  }, [target])
+  }, [mounted, target])
 
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
@@ -59,6 +67,7 @@ export default function Ring({ value = 0, size = 72, stroke = 6, color = 'var(--
       </svg>
       <span
         className="absolute inset-0 flex items-center justify-center font-mono text-[11px] tabular-nums text-ink whitespace-nowrap"
+        suppressHydrationWarning
       >
         {Math.round(animated)}%
       </span>

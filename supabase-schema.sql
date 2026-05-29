@@ -11,6 +11,9 @@ create table public.profiles (
   tier text default 'free' check (tier in ('free', 'pro', 'coach')),
   generations_this_month integer default 0,
   month_reset_date date default current_date,
+  credits_used integer not null default 0,
+  last_reset_date date default current_date,
+  is_generating boolean not null default false,
   profile_data jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now()

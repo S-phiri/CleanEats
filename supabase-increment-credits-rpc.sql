@@ -1,5 +1,6 @@
 -- ============================================
 -- Atomic free-tier credit increment (run once in Supabase SQL Editor)
+-- Prerequisite: run supabase-profiles-credits-migration.sql first
 -- Requires: public.profiles.credits_used
 -- ============================================
 

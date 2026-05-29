@@ -53,6 +53,14 @@ npm install
 
 **Why:** Creates `profiles`, `plans`, RLS policies, and the signup trigger so new users get a profile row.
 
+### 3b. Apply credits migration + RPC (required for plan generation)
+
+1. Supabase → **SQL Editor** → New query.
+2. Run everything in `supabase-profiles-credits-migration.sql` (adds `credits_used`, `last_reset_date`, `is_generating` on `profiles`).
+3. Run everything in `supabase-increment-credits-rpc.sql` (atomic credit charging for free tier).
+
+**Why:** `/api/generate` charges credits via the `increment_credits_if_under_cap` RPC. Without these columns and function, new users get **500 Failed to verify credits** on profile Step 5.
+
 ### 4. Configure Auth URLs (local)
 
 Supabase → **Authentication** → **URL configuration**:

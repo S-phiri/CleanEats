@@ -389,15 +389,15 @@ CRITICAL INSTRUCTION: Return ONLY raw valid JSON. No markdown. Begin with { and 
                     setSelectedMealIndex(0)
                   }}
                 />
-                <div className="grid grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)] gap-5 mt-6 overflow-hidden">
-                  <div className="min-w-0 overflow-hidden">
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,38%)_minmax(0,1fr)] gap-5 lg:gap-6 mt-6">
+                  <div className="min-w-0 lg:max-w-[420px]">
                     <SlotList
                       meals={selectedMeals}
                       selectedIndex={selectedMealIndex}
                       onSelect={setSelectedMealIndex}
                     />
                   </div>
-                  <div className="min-w-0 overflow-hidden">
+                  <div className="min-w-0">
                     <RecipePanel
                       meal={selectedMeal}
                       dayMeals={selectedMeals}

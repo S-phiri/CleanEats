@@ -10,11 +10,17 @@ const GRADIENTS = {
   /** Bottom 60% darkens for readable overlaid text */
   card:
     'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.45) 55%, rgba(0,0,0,0.72) 75%, rgba(0,0,0,0.88) 100%)',
+  /** Today tab — left-weighted dark fade for title readability */
+  today:
+    'linear-gradient(to right, rgba(0,0,0,0.85) 30%, rgba(0,0,0,0.3) 100%)',
+  /** Plan slot list — text left, photo visible right */
+  slot:
+    'linear-gradient(to right, rgba(0,0,0,0.7) 40%, rgba(0,0,0,0.2) 100%)',
 }
 
 /**
  * Optional Unsplash backdrop with dark gradient and optional attribution.
- * @param {{ image?: { url: string, photographerName: string, photographerUrl: string } | null, children: React.ReactNode, className?: string, as?: 'div' | 'button', buttonProps?: object, overlay?: 'default' | 'card', showAttribution?: boolean }} props
+ * @param {{ image?: { url: string, photographerName: string, photographerUrl: string } | null, children: React.ReactNode, className?: string, as?: 'div' | 'button', buttonProps?: object, overlay?: 'default' | 'card' | 'today' | 'slot', showAttribution?: boolean }} props
  */
 export default function MealCardBackground({
   image,
@@ -68,7 +74,9 @@ export default function MealCardBackground({
       {!hasImage && (
         <div
           className="absolute inset-0 bg-base-3"
-          style={{ background: GRADIENTS.card }}
+          style={{
+            background: GRADIENTS[overlay] || GRADIENTS.card,
+          }}
           aria-hidden
         />
       )}

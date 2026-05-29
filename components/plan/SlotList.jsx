@@ -23,47 +23,44 @@ export default function SlotList({ meals = [], selectedIndex, onSelect, doneSet 
               key={i}
               as="button"
               image={image}
-              overlay="card"
+              overlay="slot"
               showAttribution={false}
-              className={`w-full text-left h-[90px] min-h-[90px] rounded-xl transition-all ${
+              className={`w-full text-left h-[120px] min-h-[120px] rounded-xl transition-all ${
                 active
-                  ? 'ring-2 ring-green/70 ring-offset-2 ring-offset-base'
-                  : 'hover:ring-1 hover:ring-white/20'
+                  ? 'ring-2 ring-green/60 ring-offset-2 ring-offset-base'
+                  : 'hover:ring-1 hover:ring-white/15'
               }`}
               buttonProps={{
                 type: 'button',
                 onClick: () => onSelect(i),
               }}
             >
-              <div className="relative flex h-[90px] w-full flex-col p-3 text-left">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-gold shrink-0 drop-shadow-sm">
+              <div className="relative flex h-[120px] w-full items-center px-4 pr-3">
+                <div className="flex flex-1 min-w-0 h-full flex-col py-3 pr-3">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-gold">
                     {meal.type || 'Meal'}
                   </span>
-                  <ChevronRight
-                    size={16}
-                    strokeWidth={2}
-                    className={`shrink-0 drop-shadow-sm ${active ? 'text-green-soft' : 'text-white/50'}`}
-                    aria-hidden
-                  />
-                </div>
-
-                <div className="mt-auto flex items-end justify-between gap-2">
-                  <p className="font-syne font-bold text-[15px] text-white leading-tight truncate drop-shadow-md min-w-0">
+                  <p className="flex flex-1 items-center font-syne font-bold text-base text-white leading-snug line-clamp-2 drop-shadow-sm">
                     {meal.name || 'Untitled'}
                   </p>
                   {(done || (active && !done)) && (
                     <span
-                      className={`font-mono text-[8px] uppercase shrink-0 px-1.5 py-0.5 rounded-full border backdrop-blur-sm ${
+                      className={`self-start font-mono text-[8px] uppercase px-2 py-0.5 rounded-full border backdrop-blur-sm ${
                         done
-                          ? 'text-gold-soft border-gold/40 bg-black/45'
-                          : 'text-green-soft border-green/40 bg-black/45'
+                          ? 'text-gold-soft border-gold/35 bg-black/40'
+                          : 'text-green-soft border-green/35 bg-black/40'
                       }`}
                     >
                       {done ? 'Done' : 'Now'}
                     </span>
                   )}
                 </div>
+                <ChevronRight
+                  size={20}
+                  strokeWidth={2}
+                  className={`shrink-0 drop-shadow-sm ${active ? 'text-green-soft' : 'text-white/70'}`}
+                  aria-hidden
+                />
               </div>
             </MealCardBackground>
           )

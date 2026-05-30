@@ -536,7 +536,11 @@ Return ONLY valid JSON:
       const r2 = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: p2 }], max_tokens: 3000 }),
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: p2 }],
+          max_tokens: 3000,
+          promptType: 'shopping_prep',
+        }),
       })
       const d2 = await r2.json()
       const exhausted2 = getCreditsExhaustedPayload(r2, d2)
@@ -555,6 +559,7 @@ Return ONLY valid JSON:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          promptType: 'save_plan',
           savePlan: {
             plan_title: plan.planTitle,
             plan_subtitle: plan.planSubtitle,

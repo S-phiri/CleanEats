@@ -83,6 +83,8 @@ function messagesForAnthropic(messages, userContent, body) {
 
 /** Server-side prompt type: explicit body field or inferred from message content. */
 function resolvePromptType(userContent, body) {
+  if (body?.savePlan && typeof body.savePlan === 'object') return 'save_plan'
+
   const explicit = body?.promptType ?? body?.type
   if (typeof explicit === 'string' && explicit.trim()) {
     return explicit.trim().toLowerCase()
@@ -98,6 +100,11 @@ function resolvePromptType(userContent, body) {
 /** Credit cost from prompt type only — never from the client body. */
 function resolveCreditCost(promptType) {
   switch (promptType) {
+    case 'shopping_prep':
+    case 'wellness':
+    case 'save_plan':
+    case 'saveplan':
+      return 0
     case 'full_plan':
     case 'generate_plan':
       return 3
@@ -105,8 +112,6 @@ function resolveCreditCost(promptType) {
     case 'swap_ingredient':
     case 'log_deviation':
       return 1
-    case 'shopping_prep':
-      return 0
     case 'cache_fill':
       return 1
     default:
@@ -214,6 +219,21 @@ function mockAnthropicPayload(planPart, shoppingPart, isSecondCall) {
 
 async function releaseGenerationLock(supabase, userId) {
   await supabase.from('profiles').update({ is_generating: false }).eq('id', userId)
+}
+
+/** True when the user has never saved a plan — first onboarding generation is free. */
+async function userHasNoPlans(supabase, userId) {
+  const { count, error } = await supabase
+    .from('plans')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('Plans count error:', error)
+    return false
+  }
+
+  return count === 0
 }
 
 async function clearStuckGenerationLock(supabase, userId, profile) {
@@ -327,7 +347,13 @@ export async function POST(request) {
 
   const userContent = messages[0]?.content ?? ''
   const promptType = resolvePromptType(userContent, body)
-  const creditCost = resolveCreditCost(promptType)
+  let creditCost = resolveCreditCost(promptType)
+  if (isShoppingPrepPrompt(userContent)) creditCost = 0
+
+  if (tier === 'free' && creditCost > 0 && (await userHasNoPlans(supabase, user.id))) {
+    creditCost = 0
+  }
+
   /** Pairs with meal-plan call; do not double-count free-tier generations. */
   const skipQuotaIncrement = isShoppingPrepPrompt(userContent)
   const skipGenerationLock =

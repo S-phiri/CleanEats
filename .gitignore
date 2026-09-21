@@ -1,5 +1,6 @@
 .env.local
 .env
+docs/closed-test-allowlist.json
 node_modules/
 .next/
 out/

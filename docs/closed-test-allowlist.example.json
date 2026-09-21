@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to closed-test-allowlist.json (gitignored). Share with Aura only. Closed test — not a client list.",
+  "tenant": "cleaneats",
+  "business_number_e164": "+27646604490",
+  "testers": [
+    {
+      "name": "Your name",
+      "phone_e164": "+27XXXXXXXXX",
+      "country": "ZA",
+      "opt_in_date": "YYYY-MM-DD",
+      "opt_in_method": "email | whatsapp | doc",
+      "notes": "Operator phone — first template recipient"
+    }
+  ]
+}
